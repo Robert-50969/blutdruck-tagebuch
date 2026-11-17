@@ -347,15 +347,35 @@ footer p { margin: 0; }
   /* ---------- Handy-Funktionen (Capacitor) ---------- */
   var Cap = window.Capacitor;
   var native = !!(Cap && typeof Cap.isNativePlatform === "function" && Cap.isNativePlatform());
+  /* Ohne Bündelung stellt die Android-Brücke nur nativePromise bereit (registerPlugin kommt aus dem Capacitor-Kern). */
   function plugin(name) {
-    try { return native && Cap.registerPlugin ? Cap.registerPlugin(name) : null; } catch (e) { return null; }
+    if (!native) return null;
+    try {
+      if (typeof Cap.registerPlugin === "function") return Cap.registerPlugin(name);
+    } catch (e) { /* weiter mit nativePromise */ }
+    if (typeof Cap.nativePromise === "function") {
+      return new Proxy({}, {
+        get: function (t, method) {
+          if (method === "then" || typeof method !== "string") return undefined;
+          return function (opts) { return Cap.nativePromise(name, method, opts || {}); };
+        }
+      });
+    }
+    return null;
   }
   var Prefs = plugin("Preferences"), Files = plugin("Filesystem"), ShareP = plugin("Share");
   var KEY = "blutdruck-werte-v1";
 
   function loadAll() {
     if (Prefs) {
-      return Prefs.get({ key: KEY }).then(function (r) { return JSON.parse((r && r.value) || "[]"); });
+      return Prefs.get({ key: KEY }).then(function (r) {
+        if (r && r.value) return JSON.parse(r.value);
+        // Übernahme älterer Werte, die vorher im Browser-Speicher der App lagen
+        var old = [];
+        try { old = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { old = []; }
+        if (old.length) return persist(old).then(function () { return old; });
+        return [];
+      });
     }
     return Promise.resolve().then(function () { return JSON.parse(localStorage.getItem(KEY) || "[]"); });
   }
