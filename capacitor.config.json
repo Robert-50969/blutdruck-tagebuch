@@ -1,0 +1,6 @@
+{
+  "appId": "de.privat.blutdruck",
+  "appName": "Blutdruck",
+  "webDir": "www",
+  "server": { "androidScheme": "https" }
+}
