@@ -86,7 +86,7 @@ form { display: flex; flex-direction: column; gap: 14px; }
   text-transform: uppercase;
 }
 .field label b { color: var(--fg); font-weight: 600; }
-input[type="text"], input[type="date"], input[type="datetime-local"] {
+input[type="text"], input[type="password"], input[type="date"], input[type="datetime-local"] {
   width: 100%;
   min-width: 0;
   font: inherit;
@@ -236,6 +236,7 @@ button {
 .opt input { width: auto; accent-color: var(--accent); }
 .opt.on { border-color: var(--accent); }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt-hint { font-weight: 400; color: var(--muted); }
 .note { margin: 0; color: var(--muted); font-size: 0.8125rem; }
 footer { color: var(--muted); font-size: 0.8125rem; }
 footer { display: flex; flex-direction: column; gap: 6px; }
@@ -334,6 +335,15 @@ footer .rights { color: var(--fg); font-weight: 500; }
       <div class="field"><label for="rep-from">Von</label><input id="rep-from" type="date"></div>
       <div class="field"><label for="rep-to">Bis</label><input id="rep-to" type="date"></div>
     </div>
+    <div class="field">
+      <label for="rep-name">Name des Patienten <span class="opt-hint">(steht oben in der PDF)</span></label>
+      <input id="rep-name" type="text" maxlength="80" autocomplete="name" placeholder="Vor- und Nachname">
+    </div>
+    <div class="field">
+      <label for="rep-pw">Passwort für die PDF <span class="opt-hint">(leer lassen = ohne Passwort)</span></label>
+      <input id="rep-pw" type="password" maxlength="64" autocomplete="new-password" placeholder="Passwort zum Öffnen der PDF">
+    </div>
+    <p class="note">Das Passwort wird nicht gespeichert. Bitte teile es dem Empfänger auf einem anderen Weg mit als die PDF, zum Beispiel telefonisch.</p>
     <button id="rep-btn" type="button" class="primary">PDF erstellen und teilen</button>
     <p id="rep-msg" class="msg" role="status" aria-live="polite"></p>
   </section>
@@ -427,6 +437,7 @@ footer .rights { color: var(--fg); font-weight: 500; }
     return writeChain;
   }
   var MEDKEY = "blutdruck-medikamente-v1";
+  var NAMEKEY = "blutdruck-patientenname-v1";
   function loadAll() { return loadKey(KEY); }
   function persist(list) { return persistKey(KEY, list); }
 
@@ -740,6 +751,9 @@ footer .rights { color: var(--fg); font-weight: 500; }
   /* ---------- PDF-Bericht ---------- */
   var repCustom = $("#rep-custom"), repFrom = $("#rep-from"), repTo = $("#rep-to");
   var repBtn = $("#rep-btn"), repMsg = $("#rep-msg");
+  var repName = $("#rep-name"), repPw = $("#rep-pw");
+  loadKey(NAMEKEY).then(function (v) { if (typeof v === "string" && !repName.value) repName.value = v; }).catch(function () {});
+  repName.addEventListener("change", function () { persistKey(NAMEKEY, cleanText(repName.value)).catch(function () {}); });
   function setRepDefaults() {
     var t = new Date();
     repTo.value = dateValue(t);
@@ -760,12 +774,21 @@ footer .rights { color: var(--fg); font-weight: 500; }
   function buildPdf(list, from, to) {
     var J = window.jspdf && window.jspdf.jsPDF;
     if (!J) throw new Error("jspdf fehlt");
-    var doc = new J({ unit: "mm", format: "a4" });
+    var opts = { unit: "mm", format: "a4" };
+    var pw = repPw.value;
+    if (pw) opts.encryption = { userPassword: pw, ownerPassword: pw + "#" + Math.random().toString(36).slice(2), userPermissions: ["print"] };
+    var doc = new J(opts);
     var L = 18, R = 192, y = 22;
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(20);
     doc.text("Blutdruck-Protokoll", L, y);
     y += 8;
+    var patient = cleanText(repName.value);
+    if (patient) {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(20);
+      doc.text(doc.splitTextToSize(pdfSafe("Patient: " + patient), R - L), L, y);
+      y += 7;
+    }
     doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(60);
     doc.text("Zeitraum: " + fmtDate(from) + " bis " + fmtDate(to), L, y);
     y += 6;
@@ -791,7 +814,7 @@ footer .rights { color: var(--fg); font-weight: 500; }
     });
     y += 6;
 
-    /* ---------- Verlaufsgrafik: Systolisch, Diastolisch und Puls je in einem eigenen Diagramm ---------- */
+    /* ---------- Verlaufsgrafik: ein Diagramm für den Blutdruck (systolisch + diastolisch), eines für den Puls ---------- */
     function niceStep(range) {
       var steps = [1, 2, 5, 10, 20, 25, 50, 100];
       for (var i = 0; i < steps.length; i++) if (range / steps[i] <= 5) return steps[i];
@@ -802,10 +825,15 @@ footer .rights { color: var(--fg); font-weight: 500; }
       var x1 = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59).getTime();
       var spanDays = Math.max(1, Math.round((x1 - x0) / 864e5));
       var panels = [
-        { key: "sys", title: "Systolisch (mmHg)", color: [10, 107, 107], ref: 140 },
-        { key: "dia", title: "Diastolisch (mmHg)", color: [45, 90, 170], ref: 90 },
-        { key: "pulse", title: "Puls (pro Minute)", color: [160, 90, 20], ref: null }
-      ].filter(function (p) { return list.some(function (r) { return r[p.key]; }); });
+        { title: "Blutdruck (mmHg)", PH: 52, series: [
+          { key: "sys", name: "Systolisch (oben)", color: [10, 107, 107], ref: 140 },
+          { key: "dia", name: "Diastolisch (unten)", color: [45, 90, 170], ref: 90 }] },
+        { title: "Puls (pro Minute)", PH: 38, series: [
+          { key: "pulse", name: "Puls", color: [160, 90, 20], ref: null }] }
+      ].map(function (p) {
+        p.series = p.series.filter(function (sr) { return list.some(function (r) { return r[sr.key]; }); });
+        return p;
+      }).filter(function (p) { return p.series.length; });
       if (!panels.length) return;
 
       // Medikamentenereignisse im Zeitraum: Beginn oder Änderung, Ende
@@ -821,14 +849,14 @@ footer .rights { color: var(--fg); font-weight: 500; }
       });
       events.sort(function (a, b) { return a.ts - b.ts; });
 
-      var PH = 26, TITLE = 5, GAP = 6, TAGROW = events.length ? 6 : 0;
-      var legend = ["Graue Strichlinie: 140 bzw. 90 mmHg (Schwelle zur Hypertonie Grad 1)."];
+      var TITLE = 6, GAP = 8, TAGROW = events.length ? 6 : 0;
+      var legend = ["Graue Strichlinien: 140 mmHg (systolisch) bzw. 90 mmHg (diastolisch), Schwelle zur Hypertonie Grad 1."];
       if (events.length) {
         var parts = events.map(function (ev, i) { return (i + 1) + " " + ev.label + " (" + fmtDate(new Date(ev.ts)) + ")"; });
         legend.push("Orange Strichlinie mit Zahl: Beginn, Änderung oder Ende eines Medikaments. " + parts.join(";  ") + ".");
       }
       var legendLines = doc.splitTextToSize(pdfSafe(legend.join(" ")), R - L);
-      var need = 6 + TAGROW + panels.length * (TITLE + PH + GAP) + 8 + legendLines.length * 3.6 + 4;
+      var need = 6 + TAGROW + panels.reduce(function (acc, p) { return acc + TITLE + p.PH + GAP; }, 0) + 8 + legendLines.length * 3.6 + 4;
       if (y + need > 272) { doc.addPage(); y = 22; }
 
       doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(20);
@@ -858,17 +886,32 @@ footer .rights { color: var(--fg); font-weight: 500; }
       }
 
       panels.forEach(function (p, pi) {
-        var vals = list.filter(function (r) { return r[p.key]; });
-        var lo = Math.min.apply(null, vals.map(function (r) { return r[p.key]; }));
-        var hi = Math.max.apply(null, vals.map(function (r) { return r[p.key]; }));
-        if (p.ref) { lo = Math.min(lo, p.ref); hi = Math.max(hi, p.ref); }
+        var PH = p.PH;
+        var all = [], refs = [];
+        p.series.forEach(function (sr) {
+          list.forEach(function (r) { if (r[sr.key]) all.push(r[sr.key]); });
+          if (sr.ref) refs.push(sr.ref);
+        });
+        var lo = Math.min.apply(null, all.concat(refs)), hi = Math.max.apply(null, all.concat(refs));
         var step = niceStep(hi - lo + 1);
         var dlo = Math.floor((lo - step * 0.3) / step) * step, dhi = Math.ceil((hi + step * 0.3) / step) * step;
         var top = y + TITLE;
         function Y(v) { return top + PH - (v - dlo) / (dhi - dlo) * PH; }
 
-        doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(p.color[0], p.color[1], p.color[2]);
+        // Titel und Legende der Linien
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(20);
         doc.text(p.title, pl, y + 3);
+        var lx = pr;
+        for (var si = p.series.length - 1; si >= 0; si--) {
+          var sr0 = p.series[si];
+          doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+          var tw = doc.getTextWidth(sr0.name);
+          lx -= tw;
+          doc.setTextColor(60); doc.text(sr0.name, lx, y + 3);
+          doc.setDrawColor(sr0.color[0], sr0.color[1], sr0.color[2]); doc.setFillColor(sr0.color[0], sr0.color[1], sr0.color[2]);
+          doc.setLineWidth(0.5); doc.line(lx - 8, y + 2.4, lx - 2, y + 2.4); doc.circle(lx - 5, y + 2.4, 0.8, "F");
+          lx -= 12;
+        }
 
         // Raster
         doc.setLineWidth(0.15);
@@ -879,29 +922,31 @@ footer .rights { color: var(--fg); font-weight: 500; }
         }
         ticks.forEach(function (t) {
           doc.setDrawColor(238); doc.line(X(t), top, X(t), top + PH);
-          if (pi === panels.length - 1) {
-            doc.setTextColor(110);
-            doc.text(p2(new Date(t).getDate()) + "." + p2(new Date(t).getMonth() + 1) + ".", X(t), top + PH + 3.6, { align: "center" });
-          }
+          doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(110);
+          doc.text(p2(new Date(t).getDate()) + "." + p2(new Date(t).getMonth() + 1) + ".", X(t), top + PH + 3.6, { align: "center" });
         });
         doc.setDrawColor(190); doc.setLineWidth(0.2); doc.rect(pl, top, pw, PH);
 
-        // Schwelle
-        if (p.ref) {
+        // Schwellen
+        p.series.forEach(function (sr) {
+          if (!sr.ref) return;
           doc.setDrawColor(150); doc.setLineWidth(0.25);
-          doc.setLineDashPattern([1.5, 1.2], 0); doc.line(pl, Y(p.ref), pr, Y(p.ref)); doc.setLineDashPattern([], 0);
-        }
+          doc.setLineDashPattern([1.5, 1.2], 0); doc.line(pl, Y(sr.ref), pr, Y(sr.ref)); doc.setLineDashPattern([], 0);
+        });
         // Medikamentenmarken
         events.forEach(function (ev) {
           doc.setDrawColor(200, 110, 20); doc.setLineWidth(0.25);
           doc.setLineDashPattern([0.8, 0.8], 0); doc.line(X(ev.ts), top, X(ev.ts), top + PH); doc.setLineDashPattern([], 0);
         });
         // Messwerte
-        doc.setDrawColor(p.color[0], p.color[1], p.color[2]); doc.setFillColor(p.color[0], p.color[1], p.color[2]);
-        doc.setLineWidth(0.35);
-        for (var i = 1; i < vals.length; i++) doc.line(X(vals[i - 1].ts), Y(vals[i - 1][p.key]), X(vals[i].ts), Y(vals[i][p.key]));
-        var rad = vals.length > 60 ? 0.45 : 0.7;
-        vals.forEach(function (r) { doc.circle(X(r.ts), Y(r[p.key]), rad, "F"); });
+        p.series.forEach(function (sr) {
+          var vals = list.filter(function (r) { return r[sr.key]; });
+          doc.setDrawColor(sr.color[0], sr.color[1], sr.color[2]); doc.setFillColor(sr.color[0], sr.color[1], sr.color[2]);
+          doc.setLineWidth(0.4);
+          for (var i = 1; i < vals.length; i++) doc.line(X(vals[i - 1].ts), Y(vals[i - 1][sr.key]), X(vals[i].ts), Y(vals[i][sr.key]));
+          var rad = vals.length > 60 ? 0.5 : 0.8;
+          vals.forEach(function (r) { doc.circle(X(r.ts), Y(r[sr.key]), rad, "F"); });
+        });
 
         y = top + PH + GAP;
       });
@@ -993,8 +1038,8 @@ footer .rights { color: var(--fg); font-weight: 500; }
     var name = "blutdruck_" + dateValue(from) + "_bis_" + dateValue(shownTo) + ".pdf";
     deliver(name, "application/pdf", null, buf, "Blutdruck-Protokoll").then(function (how) {
       repSay(how === "shared"
-        ? "PDF mit " + list.length + (list.length === 1 ? " Messung" : " Messungen") + " ist fertig. Wähle im Teilen-Menü deine Mail-App."
-        : "PDF mit " + list.length + (list.length === 1 ? " Messung" : " Messungen") + " wurde heruntergeladen.", "ok");
+        ? "PDF" + (repPw.value ? " (mit Passwort)" : "") + " mit " + list.length + (list.length === 1 ? " Messung" : " Messungen") + " ist fertig. Wähle im Teilen-Menü deine Mail-App."
+        : "PDF" + (repPw.value ? " (mit Passwort)" : "") + " mit " + list.length + (list.length === 1 ? " Messung" : " Messungen") + " wurde heruntergeladen.", "ok");
     }).catch(function (err) {
       if (isCancel(err)) repSay("");
       else repSay("Das PDF konnte nicht geteilt werden.", "err");
