@@ -241,6 +241,18 @@ footer { color: var(--muted); font-size: 0.8125rem; }
 footer { display: flex; flex-direction: column; gap: 6px; }
 footer p { margin: 0; }
 footer .rights { color: var(--fg); font-weight: 500; }
+#meds { display: flex; flex-direction: column; gap: 14px; }
+#meds h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; }
+.medform { display: flex; flex-direction: column; gap: 12px; }
+.medh { margin: 4px 0 6px; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); }
+.medul { list-style: none; margin: 0 0 6px; padding: 0; border: 1px solid var(--line); border-radius: 12px; }
+.med { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; }
+.med + .med { border-top: 1px solid var(--line); }
+.medtop { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; overflow-wrap: anywhere; }
+.medtop b { font-weight: 600; }
+.medmeta { font-size: 0.875rem; color: var(--muted); }
+.medbtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.daynote { margin: 0 2px 6px; font-size: 0.8125rem; font-weight: 500; color: var(--accent); overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
@@ -287,6 +299,29 @@ footer .rights { color: var(--fg); font-weight: 500; }
 
   <div id="summary" class="summary" hidden></div>
   <section id="log" aria-label="Gespeicherte Messungen"></section>
+
+  <section id="meds" class="card">
+    <h2>Medikamente</h2>
+    <p class="note">Trage ein, was du in welcher Menge einnimmst. Die App zeigt dir den Blutdruck je Zeitraum und nimmt die Medikamente ins PDF für den Arzt auf.</p>
+    <form id="medform" class="medform" novalidate autocomplete="off">
+      <div class="field">
+        <label for="med-name">Medikament</label>
+        <input id="med-name" type="text" maxlength="60" placeholder="z. B. Ramipril">
+      </div>
+      <div class="field">
+        <label for="med-dose">Menge pro Tag</label>
+        <input id="med-dose" type="text" maxlength="60" placeholder="z. B. 5 mg morgens">
+      </div>
+      <div class="pair">
+        <div class="field"><label for="med-from">Seit</label><input id="med-from" type="date"></div>
+        <div class="field"><label for="med-to">Bis (optional)</label><input id="med-to" type="date"></div>
+      </div>
+      <button id="med-save" type="submit" class="primary" disabled>Hinzufügen</button>
+      <p id="med-msg" class="msg" role="status" aria-live="polite"></p>
+    </form>
+    <div id="medlist"></div>
+    <p class="note">Die Durchschnittswerte zeigen nur, was zeitlich zusammenfällt, keine Ursache. Mehrere Medikamente und Lebensumstände wirken zusammen. Änderungen an der Einnahme bitte immer mit deiner Ärztin oder deinem Arzt besprechen.</p>
+  </section>
 
   <section id="report" class="card">
     <h2>PDF für den Arzt</h2>
@@ -369,28 +404,31 @@ footer .rights { color: var(--fg); font-weight: 500; }
   var Prefs = plugin("Preferences"), Files = plugin("Filesystem"), ShareP = plugin("Share");
   var KEY = "blutdruck-werte-v1";
 
-  function loadAll() {
+  function loadKey(key) {
     if (Prefs) {
-      return Prefs.get({ key: KEY }).then(function (r) {
+      return Prefs.get({ key: key }).then(function (r) {
         if (r && r.value) return JSON.parse(r.value);
         // Übernahme älterer Werte, die vorher im Browser-Speicher der App lagen
         var old = [];
-        try { old = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { old = []; }
-        if (old.length) return persist(old).then(function () { return old; });
+        try { old = JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { old = []; }
+        if (old.length) return persistKey(key, old).then(function () { return old; });
         return [];
       });
     }
-    return Promise.resolve().then(function () { return JSON.parse(localStorage.getItem(KEY) || "[]"); });
+    return Promise.resolve().then(function () { return JSON.parse(localStorage.getItem(key) || "[]"); });
   }
   var writeChain = Promise.resolve();
-  function persist(list) {
+  function persistKey(key, list) {
     var json = JSON.stringify(list);
     writeChain = writeChain.catch(function () {}).then(function () {
-      if (Prefs) return Prefs.set({ key: KEY, value: json });
-      localStorage.setItem(KEY, json);
+      if (Prefs) return Prefs.set({ key: key, value: json });
+      localStorage.setItem(key, json);
     });
     return writeChain;
   }
+  var MEDKEY = "blutdruck-medikamente-v1";
+  function loadAll() { return loadKey(KEY); }
+  function persist(list) { return persistKey(KEY, list); }
 
   function toBase64(buf) {
     var bytes = new Uint8Array(buf), bin = "", chunk = 0x8000;
@@ -506,6 +544,7 @@ footer .rights { color: var(--fg); font-weight: 500; }
     return Math.round(t / list.length);
   }
   function render() {
+    renderMeds();
     if (!loaded) {
       logEl.innerHTML = '<p class="empty">Messungen werden geladen.</p>';
       summaryEl.hidden = true;
@@ -529,8 +568,14 @@ footer .rights { color: var(--fg); font-weight: 500; }
     while (i < list.length) {
       var k = dayKey(list[i].ts), group = [];
       while (i < list.length && dayKey(list[i].ts) === k) { group.push(list[i]); i++; }
+      var ev = [];
+      meds.forEach(function (m) { if (m.from === k) ev.push("Beginn: " + esc(m.name) + " " + esc(m.dose)); });
+      meds.forEach(function (m) {
+        if (m.to && shiftDay(m.to, 1) === k && !meds.some(function (n) { return sameName(n.name, m.name) && n.from === k; })) ev.push("Ende: " + esc(m.name));
+      });
       html += '<section class="day"><h3>' + dayLabel(group[0].ts) +
-        (group.length > 1 ? "<span>Ø " + avg(group, "sys") + "/" + avg(group, "dia") + "</span>" : "") + "</h3><ul>";
+        (group.length > 1 ? "<span>Ø " + avg(group, "sys") + "/" + avg(group, "dia") + "</span>" : "") + "</h3>" +
+        (ev.length ? '<p class="daynote">' + ev.join(" &middot; ") + "</p>" : "") + "<ul>";
       group.forEach(function (r) {
         var s = Number(r.sys), d = Number(r.dia);
         html += '<li class="row"><time>' + timeStr(r.ts) + '</time><div class="vals"><span class="n">' + s +
@@ -557,6 +602,139 @@ footer .rights { color: var(--fg); font-weight: 500; }
     persist(next).then(function () { readings = next; render(); }).catch(function () {
       setMsg("Löschen hat nicht geklappt.", "err"); b.disabled = false;
     });
+  });
+
+  /* ---------- Medikamente ---------- */
+  var meds = [];
+  var medNameEl = $("#med-name"), medDoseEl = $("#med-dose"), medFromEl = $("#med-from"), medToEl = $("#med-to");
+  var medSaveBtn = $("#med-save"), medMsgEl = $("#med-msg"), medListEl = $("#medlist");
+
+  function esc(t) {
+    return String(t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
+  }
+  function cleanText(t) { return String(t || "").replace(/[\r\n\t;]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function safeId(id) { return String(id).replace(/[^\w.~:@+-]/g, ""); }
+  function fmtIso(t) { return t.slice(8, 10) + "." + t.slice(5, 7) + "." + t.slice(0, 4); }
+  function shiftDay(iso, n) { var d = parseDay(iso); return dateValue(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)); }
+  function inPeriod(ts, from, to) { var k = dayKey(ts); return k >= from && (!to || k <= to); }
+  function sgn(n) { return n > 0 ? "+" + n : n < 0 ? "−" + Math.abs(n) : "±0"; }
+  function sameName(a, b) { return a.toLowerCase() === b.toLowerCase(); }
+  function pdfSafe(t) {
+    return String(t).replace(/−/g, "-").replace(/[–—]/g, "-").replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"').replace(/[^ -~ -ÿ]/g, "?");
+  }
+  function validMed(m) {
+    return m && m.id && typeof m.name === "string" && typeof m.dose === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.from) &&
+      (m.to === null || m.to === undefined || /^\d{4}-\d{2}-\d{2}$/.test(m.to));
+  }
+  function medInfo(m) {
+    var during = readings.filter(function (r) { return inPeriod(r.ts, m.from, m.to); });
+    var before = readings.filter(function (r) { return inPeriod(r.ts, shiftDay(m.from, -14), shiftDay(m.from, -1)); });
+    var info = { period: m.to ? fmtIso(m.from) + " bis " + fmtIso(m.to) : "seit " + fmtIso(m.from), stat: "", cmp: "" };
+    if (during.length) {
+      info.stat = "Durchschnitt: " + avg(during, "sys") + "/" + avg(during, "dia") + " mmHg aus " + during.length + (during.length === 1 ? " Messung" : " Messungen");
+      if (during.length >= 3 && before.length >= 3) {
+        info.cmp = "Gegenüber den 14 Tagen davor (" + avg(before, "sys") + "/" + avg(before, "dia") + "): " +
+          sgn(avg(during, "sys") - avg(before, "sys")) + "/" + sgn(avg(during, "dia") - avg(before, "dia")) + " mmHg";
+      }
+    } else {
+      info.stat = "Noch keine Messungen in diesem Zeitraum";
+    }
+    return info;
+  }
+  function medRow(m) {
+    var i = medInfo(m), id = safeId(m.id);
+    return '<li class="med"><div class="medtop"><b>' + esc(m.name) + "</b><span>" + esc(m.dose) + "</span></div>" +
+      '<div class="medmeta">' + esc(i.period) + "</div>" +
+      '<div class="medmeta">' + esc(i.stat) + "</div>" + (i.cmp ? '<div class="medmeta">' + esc(i.cmp) + "</div>" : "") +
+      '<div class="medbtns">' +
+      (m.to ? "" : '<button type="button" class="ghost" data-act="change" data-id="' + id + '">Menge ändern</button>' +
+        '<button type="button" class="ghost" data-act="stop" data-id="' + id + '">Absetzen</button>') +
+      '<button type="button" class="del" data-act="del" data-id="' + id + '">Löschen</button></div></li>';
+  }
+  function renderMeds() {
+    if (!loaded) { medListEl.innerHTML = ""; return; }
+    if (!meds.length) { medListEl.innerHTML = '<p class="empty">Noch keine Medikamente eingetragen.</p>'; return; }
+    var active = meds.filter(function (m) { return !m.to; }).sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+    var past = meds.filter(function (m) { return m.to; }).sort(function (a, b) { return a.to < b.to ? 1 : a.to > b.to ? -1 : 0; });
+    var out = "";
+    if (active.length) out += '<h3 class="medh">Aktuell</h3><ul class="medul">' + active.map(medRow).join("") + "</ul>";
+    if (past.length) out += '<h3 class="medh">Früher</h3><ul class="medul">' + past.map(medRow).join("") + "</ul>";
+    medListEl.innerHTML = out;
+  }
+  function medSay(text, kind) { medMsgEl.className = "msg" + (kind ? " " + kind : ""); medMsgEl.textContent = text; }
+  medFromEl.value = dateValue(new Date());
+
+  function saveMeds(next, okMsg) {
+    medSaveBtn.disabled = true;
+    persistKey(MEDKEY, next).then(function () {
+      meds = next; render(); medSay(okMsg, "ok");
+      medNameEl.value = ""; medDoseEl.value = ""; medToEl.value = ""; medFromEl.value = dateValue(new Date());
+    }).catch(function () {
+      medSay("Speichern hat nicht geklappt. Bitte noch einmal versuchen.", "err");
+    }).then(function () { medSaveBtn.disabled = false; });
+  }
+
+  $("#medform").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!loaded) return;
+    var name = cleanText(medNameEl.value), dose = cleanText(medDoseEl.value), from = medFromEl.value, to = medToEl.value || null;
+    var today = dateValue(new Date());
+    if (!name) { medSay("Bitte den Namen des Medikaments eintragen.", "err"); medNameEl.focus(); return; }
+    if (!dose) { medSay("Bitte die Menge eintragen, zum Beispiel 5 mg morgens.", "err"); medDoseEl.focus(); return; }
+    if (!parseDay(from)) { medSay("Bitte bei \"Seit\" ein Datum angeben.", "err"); medFromEl.focus(); return; }
+    if (from > today) { medSay("Das Datum bei \"Seit\" liegt in der Zukunft.", "err"); medFromEl.focus(); return; }
+    if (to && (!parseDay(to) || to < from)) { medSay("\"Bis\" darf nicht vor \"Seit\" liegen.", "err"); medToEl.focus(); return; }
+    if (to && to > today) { medSay("Das Datum bei \"Bis\" liegt in der Zukunft.", "err"); medToEl.focus(); return; }
+    var next = meds.map(function (m) { return Object.assign({}, m); });
+    if (next.some(function (m) { return sameName(m.name, name) && m.dose === dose && m.from === from; })) {
+      medSay("Diesen Eintrag gibt es schon.", "err"); return;
+    }
+    var notice = "";
+    if (!to) {
+      var prev = next.filter(function (m) { return !m.to && sameName(m.name, name); })[0];
+      if (prev) {
+        if (from <= prev.from) {
+          medSay("Das Datum muss nach dem Beginn der bisherigen Menge (" + fmtIso(prev.from) + ") liegen. Für frühere Zeiträume \"Bis\" ausfüllen.", "err");
+          medFromEl.focus(); return;
+        }
+        prev.to = shiftDay(from, -1);
+        notice = " Die bisherige Menge (" + prev.dose + ") endet am " + fmtIso(prev.to) + ".";
+      }
+    }
+    next.push({ id: newId(), name: name, dose: dose, from: from, to: to });
+    saveMeds(next, "Gespeichert: " + name + ", " + dose + (to ? ", " + fmtIso(from) + " bis " + fmtIso(to) : " seit " + fmtIso(from)) + "." + notice);
+  });
+
+  medListEl.addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("button[data-act]") : null;
+    if (!b || !loaded) return;
+    var act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+    var m = meds.filter(function (x) { return safeId(x.id) === id; })[0];
+    if (!m) return;
+    if (act === "change") {
+      medNameEl.value = m.name; medDoseEl.value = ""; medFromEl.value = dateValue(new Date()); medToEl.value = "";
+      medSay("Trage die neue Menge für " + m.name + " ein. Die bisherige Menge endet am Vortag.", "ok");
+      medDoseEl.focus();
+      return;
+    }
+    if (!b.classList.contains("armed")) {
+      var orig = b.textContent;
+      b.classList.add("armed"); b.textContent = act === "stop" ? "Wirklich absetzen?" : "Wirklich löschen?";
+      setTimeout(function () { if (b.isConnected) { b.classList.remove("armed"); b.textContent = orig; } }, 4000);
+      return;
+    }
+    var next;
+    if (act === "stop") {
+      next = meds.map(function (x) { var c = Object.assign({}, x); if (c.id === m.id) c.to = dateValue(new Date()); return c; });
+    } else {
+      next = meds.filter(function (x) { return x.id !== m.id; });
+    }
+    b.disabled = true;
+    persistKey(MEDKEY, next).then(function () {
+      meds = next; render();
+      medSay(act === "stop" ? m.name + " ist abgesetzt. Letzter Tag der Einnahme ist heute." : "Eintrag gelöscht.", "ok");
+    }).catch(function () { medSay("Das hat nicht geklappt.", "err"); b.disabled = false; });
   });
 
   /* ---------- PDF-Bericht ---------- */
@@ -613,6 +791,28 @@ footer .rights { color: var(--fg); font-weight: 500; }
     });
     y += 6;
 
+    var medsIn = meds.filter(function (m) { return m.from <= dateValue(to) && (!m.to || m.to >= dateValue(from)); })
+      .sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+    if (medsIn.length) {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(20);
+      doc.text("Medikamente", L, y); y += 6;
+      medsIn.forEach(function (m) {
+        var mi = medInfo(m);
+        var title = doc.splitTextToSize(pdfSafe(m.name + ", " + m.dose), R - L);
+        var rest = [pdfSafe(mi.period + ".  " + mi.stat)];
+        if (mi.cmp) rest.push(pdfSafe(mi.cmp));
+        if (y + title.length * 5 + rest.length * 4.6 + 3 > 268) { doc.addPage(); y = 22; }
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(20);
+        doc.text(title, L, y); y += title.length * 5;
+        doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90);
+        rest.forEach(function (t) { doc.text(t, L, y); y += 4.6; });
+        y += 2.5;
+      });
+      var medNote = doc.splitTextToSize("Die Durchschnittswerte beziehen sich auf den gesamten Einnahmezeitraum und zeigen nur zeitliche Zusammenhänge, keine Ursachen.", R - L);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(110);
+      doc.text(medNote, L, y); y += medNote.length * 4 + 6;
+    }
+
     function head() {
       doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(90);
       doc.text("Datum", L, y); doc.text("Uhrzeit", 48, y);
@@ -641,6 +841,7 @@ footer .rights { color: var(--fg); font-weight: 500; }
     var n = doc.getNumberOfPages();
     for (var p = 1; p <= n; p++) {
       doc.setPage(p); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(120);
+      doc.text("© 2026 Robert Nussholz. Alle Rechte an dieser App vorbehalten.", L, 284.5);
       doc.text("Einstufung nach ESC/ESH-Kategorien. Ersetzt keine ärztliche Beratung.", L, 289);
       doc.text("Seite " + p + " von " + n, R, 289, { align: "right" });
     }
@@ -685,21 +886,43 @@ footer .rights { color: var(--fg); font-weight: 500; }
 
   $("#export").addEventListener("click", function () {
     if (!loaded) return;
-    if (!readings.length) { bkSay("Es gibt noch keine Werte zum Exportieren.", "err"); return; }
+    if (!readings.length && !meds.length) { bkSay("Es gibt noch keine Werte zum Exportieren.", "err"); return; }
     var rows = ["Datum;Uhrzeit;Systolisch;Diastolisch;Puls"];
     readings.slice().sort(function (a, b) { return a.ts - b.ts; }).forEach(function (r) {
       rows.push([fmtDate(new Date(r.ts)), timeStr(r.ts), r.sys, r.dia, r.pulse || ""].join(";"));
     });
+    if (meds.length) {
+      rows.push("");
+      rows.push("Medikament;Menge;Seit;Bis");
+      meds.slice().sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; }).forEach(function (m) {
+        rows.push([cleanText(m.name), cleanText(m.dose), fmtIso(m.from), m.to ? fmtIso(m.to) : ""].join(";"));
+      });
+    }
     deliver("blutdruck-sicherung_" + dateValue(new Date()) + ".csv", "text/csv", "﻿" + rows.join("\r\n"), null, "Blutdruck-Sicherung")
       .then(function (how) { bkSay(how === "shared" ? "Wähle im Teilen-Menü, wohin die Sicherung gehen soll." : "Die Sicherung wurde heruntergeladen.", "ok"); })
       .catch(function (err) { if (isCancel(err)) bkSay(""); else bkSay("Die Sicherung konnte nicht geteilt werden.", "err"); });
   });
 
+  function parseGermanDay(t) {
+    var m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec((t || "").trim());
+    if (!m) return null;
+    var d = new Date(+m[3], +m[2] - 1, +m[1]);
+    return d.getMonth() === +m[2] - 1 ? dateValue(d) : null;
+  }
   function parseCsv(text) {
-    var out = [], bad = 0;
+    var out = [], medsOut = [], bad = 0, mode = "readings";
     text.replace(/^﻿/, "").split(/\r?\n/).forEach(function (line, idx) {
       line = line.trim();
       if (!line) return;
+      if (/^medikament\s*;/i.test(line)) { mode = "meds"; return; }
+      if (mode === "meds") {
+        var f = line.split(";");
+        var name = cleanText(f[0]), dose = cleanText(f[1]), from = parseGermanDay(f[2]);
+        var hasTo = (f[3] || "").trim() !== "", to = hasTo ? parseGermanDay(f[3]) : null;
+        if (!name || !dose || !from || (hasTo && !to) || (to && to < from)) { bad++; return; }
+        medsOut.push({ id: newId(), name: name, dose: dose, from: from, to: to });
+        return;
+      }
       var c = line.split(/[;,\t]/);
       if (idx === 0 && /datum/i.test(c[0])) return;
       var dm = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec((c[0] || "").trim());
@@ -713,7 +936,7 @@ footer .rights { color: var(--fg); font-weight: 500; }
       if (p !== null) rec.pulse = p;
       out.push(rec);
     });
-    return { rows: out, bad: bad };
+    return { rows: out, meds: medsOut, bad: bad };
   }
   $("#import").addEventListener("click", function () { if (loaded) importFile.click(); });
   importFile.addEventListener("change", function () {
@@ -722,17 +945,25 @@ footer .rights { color: var(--fg); font-weight: 500; }
     var reader = new FileReader();
     reader.onload = function () {
       var res = parseCsv(String(reader.result || ""));
-      var seen = {};
+      var seen = {}, seenMed = {};
       readings.forEach(function (r) { seen[r.ts + "|" + r.sys + "|" + r.dia] = true; });
+      meds.forEach(function (m) { seenMed[m.name.toLowerCase() + "|" + m.dose + "|" + m.from] = true; });
       var fresh = res.rows.filter(function (r) { var k = r.ts + "|" + r.sys + "|" + r.dia; if (seen[k]) return false; seen[k] = true; return true; });
-      var skipped = res.rows.length - fresh.length + res.bad;
-      if (!fresh.length) { bkSay("Es wurden keine neuen Werte gefunden." + (skipped ? " " + skipped + " Zeilen übersprungen." : ""), "err"); importFile.value = ""; return; }
-      var next = readings.concat(fresh);
-      persist(next).then(function () {
-        readings = next; render();
-        bkSay(fresh.length + (fresh.length === 1 ? " Messung" : " Messungen") + " importiert" + (skipped ? ", " + skipped + " Zeilen übersprungen." : "."), "ok");
-      }).catch(function () { bkSay("Der Import konnte nicht gespeichert werden.", "err"); });
+      var freshMeds = res.meds.filter(function (m) { var k = m.name.toLowerCase() + "|" + m.dose + "|" + m.from; if (seenMed[k]) return false; seenMed[k] = true; return true; });
+      var skipped = res.rows.length - fresh.length + res.meds.length - freshMeds.length + res.bad;
       importFile.value = "";
+      if (!fresh.length && !freshMeds.length) { bkSay("Es wurden keine neuen Werte gefunden." + (skipped ? " " + skipped + " Zeilen übersprungen." : ""), "err"); return; }
+      var nextR = readings.concat(fresh), nextM = meds.concat(freshMeds);
+      var chain = Promise.resolve();
+      if (fresh.length) chain = chain.then(function () { return persist(nextR); });
+      if (freshMeds.length) chain = chain.then(function () { return persistKey(MEDKEY, nextM); });
+      chain.then(function () {
+        readings = nextR; meds = nextM; render();
+        var parts = [];
+        if (fresh.length) parts.push(fresh.length + (fresh.length === 1 ? " Messung" : " Messungen"));
+        if (freshMeds.length) parts.push(freshMeds.length + (freshMeds.length === 1 ? " Medikament" : " Medikamente"));
+        bkSay(parts.join(" und ") + " importiert" + (skipped ? ", " + skipped + " Zeilen übersprungen." : "."), "ok");
+      }).catch(function () { bkSay("Der Import konnte nicht gespeichert werden.", "err"); });
     };
     reader.onerror = function () { bkSay("Die Datei konnte nicht gelesen werden.", "err"); };
     reader.readAsText(f);
@@ -740,15 +971,17 @@ footer .rights { color: var(--fg); font-weight: 500; }
 
   /* ---------- Start ---------- */
   render();
-  loadAll().then(function (list) {
-    readings = (Array.isArray(list) ? list : []).filter(function (r) {
+  Promise.all([
+    loadAll().catch(function () { setMsg("Gespeicherte Werte konnten nicht gelesen werden.", "err"); return []; }),
+    loadKey(MEDKEY).catch(function () { return []; })
+  ]).then(function (res) {
+    readings = (Array.isArray(res[0]) ? res[0] : []).filter(function (r) {
       return r && isFinite(r.ts) && isFinite(r.sys) && isFinite(r.dia) && r.id;
     });
-  }).catch(function () {
-    readings = [];
-    setMsg("Gespeicherte Werte konnten nicht gelesen werden.", "err");
-  }).then(function () {
-    loaded = true; saveBtn.disabled = false; render();
+    meds = (Array.isArray(res[1]) ? res[1] : []).filter(validMed).map(function (m) {
+      return { id: m.id, name: m.name, dose: m.dose, from: m.from, to: m.to || null };
+    });
+    loaded = true; saveBtn.disabled = false; medSaveBtn.disabled = false; render();
   });
 })();
 </script>
