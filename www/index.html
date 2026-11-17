@@ -238,7 +238,9 @@ button {
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
 .note { margin: 0; color: var(--muted); font-size: 0.8125rem; }
 footer { color: var(--muted); font-size: 0.8125rem; }
+footer { display: flex; flex-direction: column; gap: 6px; }
 footer p { margin: 0; }
+footer .rights { color: var(--fg); font-weight: 500; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
@@ -314,6 +316,7 @@ footer p { margin: 0; }
 
   <footer>
     <p>Die Einstufung folgt den ESC/ESH-Kategorien und ersetzt keine ärztliche Beratung.</p>
+    <p class="rights">© 2026 Robert Nussholz. Alle Rechte an dieser App vorbehalten.</p>
   </footer>
 </main>
 
