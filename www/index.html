@@ -791,6 +791,126 @@ footer .rights { color: var(--fg); font-weight: 500; }
     });
     y += 6;
 
+    /* ---------- Verlaufsgrafik: Systolisch, Diastolisch und Puls je in einem eigenen Diagramm ---------- */
+    function niceStep(range) {
+      var steps = [1, 2, 5, 10, 20, 25, 50, 100];
+      for (var i = 0; i < steps.length; i++) if (range / steps[i] <= 5) return steps[i];
+      return 100;
+    }
+    function drawChart() {
+      var x0 = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+      var x1 = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59).getTime();
+      var spanDays = Math.max(1, Math.round((x1 - x0) / 864e5));
+      var panels = [
+        { key: "sys", title: "Systolisch (mmHg)", color: [10, 107, 107], ref: 140 },
+        { key: "dia", title: "Diastolisch (mmHg)", color: [45, 90, 170], ref: 90 },
+        { key: "pulse", title: "Puls (pro Minute)", color: [160, 90, 20], ref: null }
+      ].filter(function (p) { return list.some(function (r) { return r[p.key]; }); });
+      if (!panels.length) return;
+
+      // Medikamentenereignisse im Zeitraum: Beginn oder Änderung, Ende
+      var events = [];
+      meds.forEach(function (m) {
+        var t = parseDay(m.from).getTime();
+        if (t >= x0 && t <= x1) events.push({ ts: t, label: "Beginn " + m.name + ", " + m.dose });
+        if (m.to) {
+          var endDay = shiftDay(m.to, 1), te = parseDay(endDay).getTime();
+          var follow = meds.some(function (n) { return sameName(n.name, m.name) && n.from === endDay; });
+          if (te >= x0 && te <= x1 && !follow) events.push({ ts: te, label: "Ende " + m.name });
+        }
+      });
+      events.sort(function (a, b) { return a.ts - b.ts; });
+
+      var PH = 26, TITLE = 5, GAP = 6, TAGROW = events.length ? 6 : 0;
+      var legend = ["Graue Strichlinie: 140 bzw. 90 mmHg (Schwelle zur Hypertonie Grad 1)."];
+      if (events.length) {
+        var parts = events.map(function (ev, i) { return (i + 1) + " " + ev.label + " (" + fmtDate(new Date(ev.ts)) + ")"; });
+        legend.push("Orange Strichlinie mit Zahl: Beginn, Änderung oder Ende eines Medikaments. " + parts.join(";  ") + ".");
+      }
+      var legendLines = doc.splitTextToSize(pdfSafe(legend.join(" ")), R - L);
+      var need = 6 + TAGROW + panels.length * (TITLE + PH + GAP) + 8 + legendLines.length * 3.6 + 4;
+      if (y + need > 272) { doc.addPage(); y = 22; }
+
+      doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(20);
+      doc.text("Verlauf", L, y); y += 6;
+
+      var pl = L + 11, pr = R - 1, pw = pr - pl;
+      function X(ts) { return pl + (ts - x0) / (x1 - x0) * pw; }
+      var stepDays = spanDays <= 10 ? 1 : spanDays <= 35 ? 7 : spanDays <= 100 ? 14 : spanDays <= 200 ? 30 : 60;
+      var ticks = [];
+      for (var k = 0; k <= spanDays; k += stepDays) {
+        var tk = new Date(from.getFullYear(), from.getMonth(), from.getDate() + k).getTime();
+        if (tk <= x1) ticks.push(tk);
+      }
+
+      if (events.length) {
+        var lastTag = -99;
+        doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
+        events.forEach(function (ev, i) {
+          var tx = Math.max(X(ev.ts), lastTag + 4);
+          lastTag = tx;
+          doc.setFillColor(200, 110, 20);
+          doc.circle(tx, y + 2.2, 1.9, "F");
+          doc.setTextColor(255);
+          doc.text(String(i + 1), tx, y + 3.1, { align: "center" });
+        });
+        y += TAGROW;
+      }
+
+      panels.forEach(function (p, pi) {
+        var vals = list.filter(function (r) { return r[p.key]; });
+        var lo = Math.min.apply(null, vals.map(function (r) { return r[p.key]; }));
+        var hi = Math.max.apply(null, vals.map(function (r) { return r[p.key]; }));
+        if (p.ref) { lo = Math.min(lo, p.ref); hi = Math.max(hi, p.ref); }
+        var step = niceStep(hi - lo + 1);
+        var dlo = Math.floor((lo - step * 0.3) / step) * step, dhi = Math.ceil((hi + step * 0.3) / step) * step;
+        var top = y + TITLE;
+        function Y(v) { return top + PH - (v - dlo) / (dhi - dlo) * PH; }
+
+        doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(p.color[0], p.color[1], p.color[2]);
+        doc.text(p.title, pl, y + 3);
+
+        // Raster
+        doc.setLineWidth(0.15);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(110);
+        for (var v = dlo; v <= dhi; v += step) {
+          doc.setDrawColor(228); doc.line(pl, Y(v), pr, Y(v));
+          doc.text(String(v), pl - 1.5, Y(v) + 0.9, { align: "right" });
+        }
+        ticks.forEach(function (t) {
+          doc.setDrawColor(238); doc.line(X(t), top, X(t), top + PH);
+          if (pi === panels.length - 1) {
+            doc.setTextColor(110);
+            doc.text(p2(new Date(t).getDate()) + "." + p2(new Date(t).getMonth() + 1) + ".", X(t), top + PH + 3.6, { align: "center" });
+          }
+        });
+        doc.setDrawColor(190); doc.setLineWidth(0.2); doc.rect(pl, top, pw, PH);
+
+        // Schwelle
+        if (p.ref) {
+          doc.setDrawColor(150); doc.setLineWidth(0.25);
+          doc.setLineDashPattern([1.5, 1.2], 0); doc.line(pl, Y(p.ref), pr, Y(p.ref)); doc.setLineDashPattern([], 0);
+        }
+        // Medikamentenmarken
+        events.forEach(function (ev) {
+          doc.setDrawColor(200, 110, 20); doc.setLineWidth(0.25);
+          doc.setLineDashPattern([0.8, 0.8], 0); doc.line(X(ev.ts), top, X(ev.ts), top + PH); doc.setLineDashPattern([], 0);
+        });
+        // Messwerte
+        doc.setDrawColor(p.color[0], p.color[1], p.color[2]); doc.setFillColor(p.color[0], p.color[1], p.color[2]);
+        doc.setLineWidth(0.35);
+        for (var i = 1; i < vals.length; i++) doc.line(X(vals[i - 1].ts), Y(vals[i - 1][p.key]), X(vals[i].ts), Y(vals[i][p.key]));
+        var rad = vals.length > 60 ? 0.45 : 0.7;
+        vals.forEach(function (r) { doc.circle(X(r.ts), Y(r[p.key]), rad, "F"); });
+
+        y = top + PH + GAP;
+      });
+      y += 3.5;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(110);
+      doc.text(legendLines, L, y); y += legendLines.length * 3.6 + 6;
+    }
+    drawChart();
+
     var medsIn = meds.filter(function (m) { return m.from <= dateValue(to) && (!m.to || m.to >= dateValue(from)); })
       .sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
     if (medsIn.length) {
@@ -822,6 +942,7 @@ footer .rights { color: var(--fg); font-weight: 500; }
       doc.text("Einstufung", 136, y);
       y += 2; doc.setDrawColor(60); doc.setLineWidth(0.3); doc.line(L, y, R, y); y += 6;
     }
+    if (y > 252) { doc.addPage(); y = 22; }
     head();
     list.forEach(function (r, i) {
       if (y > 272) { doc.addPage(); y = 22; head(); }
