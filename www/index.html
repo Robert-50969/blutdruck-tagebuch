@@ -254,6 +254,22 @@ footer .rights { color: var(--fg); font-weight: 500; }
 .medmeta { font-size: 0.875rem; color: var(--muted); }
 .medbtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 .daynote { margin: 0 2px 6px; font-size: 0.8125rem; font-weight: 500; color: var(--accent); overflow-wrap: anywhere; }
+.jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.jump a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.jump a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.logmore { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.logmore .note { width: 100%; text-align: center; }
+html { scroll-behavior: smooth; }
+section[id] { scroll-margin-top: 12px; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
@@ -264,6 +280,11 @@ footer .rights { color: var(--fg); font-weight: 500; }
   <header>
     <h1>Blutdruck-Tagebuch</h1>
     <p class="sub">Werte in mmHg. Datum und Uhrzeit sind schon eingetragen.</p>
+    <nav class="jump" aria-label="Schnellzugriff">
+      <a href="#report">PDF für den Arzt</a>
+      <a href="#meds">Medikamente</a>
+      <a href="#backup">Sicherung</a>
+    </nav>
   </header>
 
   <form id="entry" class="card" novalidate autocomplete="off">
@@ -388,6 +409,8 @@ footer .rights { color: var(--fg); font-weight: 500; }
   function pillHtml(c) { return '<span class="pill k-' + c.k + '"><i></i>' + c.label + "</span>"; }
 
   var readings = [];
+  var LOG_STEP = 7;      /* so viele Tage zeigt das Protokoll pro Schritt */
+  var logDays = LOG_STEP;
   var loaded = false;
   var touched = false;
   var saving = false;
@@ -575,8 +598,18 @@ footer .rights { color: var(--fg); font-weight: 500; }
     } else {
       summaryEl.hidden = true;
     }
-    var html = "", i = 0;
+    var html = "", i = 0, dayCount = 0, hiddenDays = 0, hiddenReadings = 0;
     while (i < list.length) {
+      if (dayCount >= logDays) {
+        var restKey = null;
+        for (; i < list.length; i++) {
+          var rk = dayKey(list[i].ts);
+          if (rk !== restKey) { hiddenDays++; restKey = rk; }
+          hiddenReadings++;
+        }
+        break;
+      }
+      dayCount++;
       var k = dayKey(list[i].ts), group = [];
       while (i < list.length && dayKey(list[i].ts) === k) { group.push(list[i]); i++; }
       var ev = [];
@@ -596,10 +629,28 @@ footer .rights { color: var(--fg); font-weight: 500; }
       });
       html += "</ul></section>";
     }
+    if (hiddenDays > 0) {
+      var step = Math.min(LOG_STEP, hiddenDays);
+      html += '<div class="logmore"><button type="button" class="ghost" data-more="step">Weitere ' + step + (step === 1 ? " Tag" : " Tage") + ' anzeigen</button>' +
+        (hiddenDays > LOG_STEP ? '<button type="button" class="ghost" data-more="all">Alle anzeigen</button>' : "") +
+        '<p class="note">' + hiddenReadings + (hiddenReadings === 1 ? " ältere Messung" : " ältere Messungen") + " an " + hiddenDays + (hiddenDays === 1 ? " Tag" : " Tagen") +
+        " ausgeblendet. Sie sind gespeichert und kommen ins PDF.</p></div>";
+    } else if (logDays > LOG_STEP) {
+      html += '<div class="logmore"><button type="button" class="ghost" data-more="less">Weniger anzeigen</button></div>';
+    }
     logEl.innerHTML = html;
   }
 
   logEl.addEventListener("click", function (e) {
+    var m = e.target.closest ? e.target.closest("[data-more]") : null;
+    if (m) {
+      var w = m.getAttribute("data-more");
+      if (w === "all") logDays = Infinity;
+      else if (w === "less") { logDays = LOG_STEP; logEl.scrollIntoView(); }
+      else logDays += LOG_STEP;
+      render();
+      return;
+    }
     var b = e.target.closest ? e.target.closest(".del") : null;
     if (!b || !loaded) return;
     if (!b.classList.contains("armed")) {
