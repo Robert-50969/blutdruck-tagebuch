@@ -1,0 +1,61 @@
+name: APK bauen
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Pakete installieren
+        run: npm install --no-audit --no-fund
+
+      - name: Schriften und PDF-Bibliothek einbinden
+        run: node scripts/prepare.js www
+
+      - name: Android-Projekt erzeugen
+        run: npx cap add android
+
+      - name: Symbol, Datenschutz-Einstellung und Version setzen
+        run: node scripts/prepare.js android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+
+      - name: App bauen
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: App signieren
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          UNSIGNED=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" aligned.apk
+          "$BT/apksigner" sign --ks blutdruck.keystore --ks-pass pass:blutdruck-privat --key-pass pass:blutdruck-privat --out Blutdruck.apk aligned.apk
+          "$BT/apksigner" verify --print-certs Blutdruck.apk
+
+      - name: APK bereitstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" Blutdruck.apk \
+            --title "Blutdruck, Version ${{ github.run_number }}" \
+            --notes "Die Datei Blutdruck.apk auf dem Handy herunterladen und installieren."
