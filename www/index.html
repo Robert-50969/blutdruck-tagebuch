@@ -254,22 +254,59 @@ footer .rights { color: var(--fg); font-weight: 500; }
 .medmeta { font-size: 0.875rem; color: var(--muted); }
 .medbtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 .daynote { margin: 0 2px 6px; font-size: 0.8125rem; font-weight: 500; color: var(--accent); overflow-wrap: anywhere; }
-.jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.jump a {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 0.875rem;
-  font-weight: 500;
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-}
-.jump a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .logmore { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
 .logmore .note { width: 100%; text-align: center; }
 html { scroll-behavior: smooth; }
 section[id] { scroll-margin-top: 12px; }
+.view { display: flex; flex-direction: column; gap: 20px; }
+body { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+
+/* Untere Leiste mit drei Bereichen */
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+.tabs-in { display: flex; max-width: 560px; margin: 0 auto; }
+.tab {
+  flex: 1; background: transparent; border: 0; border-radius: 0; color: var(--muted);
+  font-size: 0.875rem; font-weight: 500; padding: 14px 4px 12px; min-height: 52px;
+}
+.tab[aria-selected="true"] { color: var(--accent); font-weight: 600; box-shadow: inset 0 3px 0 var(--accent); }
+.tl { position: relative; display: inline-block; }
+.dot { position: absolute; top: -3px; right: -12px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
+
+/* Rezept-Warnung */
+.rxalert {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  padding: 12px 14px; border-radius: 14px; font-size: 0.9375rem;
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+.rxalert b { font-weight: 600; }
+.rxalert div { overflow-wrap: anywhere; }
+
+/* Medikamenten-Bereich */
+#v-meds h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; }
+details.card > summary { cursor: pointer; font-weight: 600; font-size: 1.0625rem; list-style: none; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: "+ "; color: var(--accent); }
+details.card[open] > summary::before { content: "\2212  "; }
+details.card .medform { margin-top: 14px; }
+.pzrow { display: flex; gap: 8px; align-items: stretch; }
+.pzrow input { flex: 1; font-family: var(--font-num); font-weight: 500; }
+.intake { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.intake .field label { font-size: 0.6875rem; letter-spacing: 0; text-align: center; }
+.intake input { text-align: center; font-family: var(--font-num); font-weight: 600; font-size: 1.25rem; padding: 10px 2px; }
+.matchbox { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; font-size: 0.9375rem; }
+#med-listmsg:empty { display: none; }
+.pat { font-family: var(--font-num); font-weight: 600; color: var(--fg); }
+.stock { margin-top: 4px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); font-size: 0.875rem; }
+.stock.warn { border-color: var(--c-hn); background: color-mix(in srgb, var(--c-hn) 14%, var(--surface)); }
+.stock.bad { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
+.stockedit { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.stockedit input { width: 7rem; font-family: var(--font-num); font-weight: 600; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
@@ -280,13 +317,11 @@ section[id] { scroll-margin-top: 12px; }
   <header>
     <h1>Blutdruck-Tagebuch</h1>
     <p class="sub">Werte in mmHg. Datum und Uhrzeit sind schon eingetragen.</p>
-    <nav class="jump" aria-label="Schnellzugriff">
-      <a href="#report">PDF für den Arzt</a>
-      <a href="#meds">Medikamente</a>
-      <a href="#backup">Sicherung</a>
-    </nav>
   </header>
 
+  <div id="rxalert" class="rxalert" role="alert" hidden></div>
+
+  <div id="v-messen" class="view">
   <form id="entry" class="card" novalidate autocomplete="off">
     <div class="pair">
       <div class="field">
@@ -321,30 +356,65 @@ section[id] { scroll-margin-top: 12px; }
 
   <div id="summary" class="summary" hidden></div>
   <section id="log" aria-label="Gespeicherte Messungen"></section>
+  </div>
 
-  <section id="meds" class="card">
-    <h2>Medikamente</h2>
-    <p class="note">Trage ein, was du in welcher Menge einnimmst. Die App zeigt dir den Blutdruck je Zeitraum und nimmt die Medikamente ins PDF für den Arzt auf.</p>
-    <form id="medform" class="medform" novalidate autocomplete="off">
-      <div class="field">
-        <label for="med-name">Medikament</label>
-        <input id="med-name" type="text" maxlength="60" placeholder="z. B. Ramipril">
-      </div>
-      <div class="field">
-        <label for="med-dose">Menge pro Tag</label>
-        <input id="med-dose" type="text" maxlength="60" placeholder="z. B. 5 mg morgens">
-      </div>
-      <div class="pair">
-        <div class="field"><label for="med-from">Seit</label><input id="med-from" type="date"></div>
-        <div class="field"><label for="med-to">Bis (optional)</label><input id="med-to" type="date"></div>
-      </div>
-      <button id="med-save" type="submit" class="primary" disabled>Hinzufügen</button>
-      <p id="med-msg" class="msg" role="status" aria-live="polite"></p>
-    </form>
-    <div id="medlist"></div>
-    <p class="note">Die Durchschnittswerte zeigen nur, was zeitlich zusammenfällt, keine Ursache. Mehrere Medikamente und Lebensumstände wirken zusammen. Änderungen an der Einnahme bitte immer mit deiner Ärztin oder deinem Arzt besprechen.</p>
-  </section>
+  <div id="v-meds" class="view" hidden>
+    <section id="meds" class="card">
+      <h2>Medikamente</h2>
+      <p class="note">Die App zeigt dir den Blutdruck je Einnahmezeitraum, nimmt die Medikamente ins PDF für den Arzt auf und warnt dich rechtzeitig, bevor der Vorrat zu Ende geht und ein neues Rezept nötig ist.</p>
+      <p id="med-listmsg" class="msg" role="status" aria-live="polite"></p>
+      <div id="medlist"></div>
+    </section>
 
+    <details id="medadd" class="card">
+      <summary>Medikament hinzufügen</summary>
+      <form id="medform" class="medform" novalidate autocomplete="off">
+        <div class="field">
+          <label for="med-pzn">PZN <span class="opt-hint">(Strichcode auf der Packung)</span></label>
+          <div class="pzrow">
+            <input id="med-pzn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="8 Ziffern">
+            <button type="button" id="med-scan" class="ghost">Scannen</button>
+          </div>
+          <p id="pzn-msg" class="msg" role="status" aria-live="polite"></p>
+        </div>
+        <div id="med-match" class="matchbox" hidden>
+          <span id="med-match-txt"></span>
+          <button type="button" id="med-match-btn" class="ghost">Packung zum Vorrat hinzufügen</button>
+        </div>
+        <div class="field">
+          <label for="med-name">Medikament</label>
+          <input id="med-name" type="text" maxlength="60" placeholder="z. B. Ramipril">
+        </div>
+        <div class="field">
+          <label for="med-str">Stärke <span class="opt-hint">(optional)</span></label>
+          <input id="med-str" type="text" maxlength="40" placeholder="z. B. 5 mg">
+        </div>
+        <div class="field">
+          <span class="lbl">Einnahme (Anzahl pro Gabe)</span>
+          <div class="intake">
+            <div class="field"><label for="med-m">Morgens</label><input id="med-m" type="text" inputmode="decimal" maxlength="5" placeholder="0"></div>
+            <div class="field"><label for="med-mi">Mittags</label><input id="med-mi" type="text" inputmode="decimal" maxlength="5" placeholder="0"></div>
+            <div class="field"><label for="med-a">Abends</label><input id="med-a" type="text" inputmode="decimal" maxlength="5" placeholder="0"></div>
+            <div class="field"><label for="med-n">Zur Nacht</label><input id="med-n" type="text" inputmode="decimal" maxlength="5" placeholder="0"></div>
+          </div>
+          <p id="med-sum" class="note">Zum Beispiel 1 morgens und 1 abends ergibt 1-0-1-0. Für eine halbe Tablette 0,5 eintragen.</p>
+        </div>
+        <div class="pair">
+          <div class="field"><label for="med-pack">Packungsgröße <span class="opt-hint">(Stück)</span></label><input id="med-pack" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="z. B. 100"></div>
+          <div class="field"><label for="med-stock">Vorrat jetzt <span class="opt-hint">(Stück)</span></label><input id="med-stock" type="text" inputmode="decimal" maxlength="7" placeholder="wie Packung"></div>
+        </div>
+        <div class="pair">
+          <div class="field"><label for="med-from">Seit</label><input id="med-from" type="date"></div>
+          <div class="field"><label for="med-to">Bis (optional)</label><input id="med-to" type="date"></div>
+        </div>
+        <button id="med-save" type="submit" class="primary" disabled>Hinzufügen</button>
+        <p id="med-msg" class="msg" role="status" aria-live="polite"></p>
+        <p class="note">Aus Vorrat und Einnahme rechnet die App aus, wie lange die Packung reicht. Sieben Tage vorher erscheint der Hinweis, ein neues Rezept zu besorgen. Die Durchschnittswerte zeigen nur, was zeitlich zusammenfällt, keine Ursache. Änderungen an der Einnahme bitte immer mit deiner Ärztin oder deinem Arzt besprechen.</p>
+      </form>
+    </details>
+  </div>
+
+  <div id="v-bericht" class="view" hidden>
   <section id="report" class="card">
     <h2>PDF für den Arzt</h2>
     <fieldset class="modes">
@@ -379,12 +449,21 @@ section[id] { scroll-margin-top: 12px; }
     </div>
     <p id="bk-msg" class="msg" role="status" aria-live="polite"></p>
   </section>
+  </div>
 
   <footer>
     <p>Die Einstufung folgt den ESC/ESH-Kategorien und ersetzt keine ärztliche Beratung.</p>
     <p class="rights">© 2026 Robert Nussholz. Alle Rechte an dieser App vorbehalten.</p>
   </footer>
 </main>
+
+<nav class="tabs" aria-label="Bereiche">
+  <div class="tabs-in" role="tablist">
+    <button type="button" class="tab" role="tab" data-tab="messen" aria-selected="true">Messwerte</button>
+    <button type="button" class="tab" role="tab" data-tab="meds" aria-selected="false"><span class="tl">Medikamente<i id="tabdot" class="dot" hidden></i></span></button>
+    <button type="button" class="tab" role="tab" data-tab="bericht" aria-selected="false">PDF &amp; Sicherung</button>
+  </div>
+</nav>
 
 <script>
 (function () {
@@ -668,8 +747,17 @@ section[id] { scroll-margin-top: 12px; }
 
   /* ---------- Medikamente ---------- */
   var meds = [];
-  var medNameEl = $("#med-name"), medDoseEl = $("#med-dose"), medFromEl = $("#med-from"), medToEl = $("#med-to");
-  var medSaveBtn = $("#med-save"), medMsgEl = $("#med-msg"), medListEl = $("#medlist");
+  var WARN_DAYS = 7;                       /* so viele Tage vor Ende des Vorrats kommt die Rezept-Warnung */
+  var SLOTS = ["m", "mi", "a", "n"];
+  var medNameEl = $("#med-name"), medStrEl = $("#med-str"), medFromEl = $("#med-from"), medToEl = $("#med-to");
+  var pznEl = $("#med-pzn"), packEl = $("#med-pack"), stockEl = $("#med-stock"), sumEl = $("#med-sum");
+  var intakeEls = [$("#med-m"), $("#med-mi"), $("#med-a"), $("#med-n")];
+  var medSaveBtn = $("#med-save"), medMsgEl = $("#med-msg"), medListEl = $("#medlist"), listMsgEl = $("#med-listmsg");
+  var medAddEl = $("#medadd"), scanBtn = $("#med-scan"), pznMsgEl = $("#pzn-msg");
+  var matchEl = $("#med-match"), matchTxt = $("#med-match-txt"), matchBtn = $("#med-match-btn");
+  var alertEl = $("#rxalert"), tabDot = $("#tabdot");
+  var stockTouched = false, stockEditId = null, curTab = "messen", matchId = null;
+  var Scanner = plugin("BarcodeScanner");
 
   function esc(t) {
     return String(t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
@@ -683,12 +771,97 @@ section[id] { scroll-margin-top: 12px; }
   function sameName(a, b) { return a.toLowerCase() === b.toLowerCase(); }
   function pdfSafe(t) {
     return String(t).replace(/−/g, "-").replace(/[–—]/g, "-").replace(/[‘’]/g, "'")
-      .replace(/[“”]/g, '"').replace(/[^ -~ -ÿ]/g, "?");
+      .replace(/[“”]/g, '"').replace(/[^ -~ -ÿ]/g, "?");
   }
+
+  /* ----- Zahlen, Einnahme-Schema ----- */
+  function parseQty(t, max) {
+    t = String(t == null ? "" : t).trim().replace(",", ".");
+    if (t === "") return 0;
+    var fr = /^(\d+)\/(\d+)$/.exec(t);
+    var v = fr ? (+fr[2] ? (+fr[1]) / (+fr[2]) : NaN) : /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
+    return isFinite(v) && v >= 0 && v <= (max || 20) ? Math.round(v * 100) / 100 : NaN;
+  }
+  function fmtQty(n) { return String(Math.round(n * 100) / 100).replace(".", ","); }
+  function round1(n) { return Math.round(n * 10) / 10; }
+  function perDay(it) { return it ? it.m + it.mi + it.a + it.n : 0; }
+  function intakePattern(it) { return SLOTS.map(function (k) { return fmtQty(it[k]); }).join("-"); }
+  function doseText(strength, it) {
+    return (strength ? strength + ", " : "") + intakePattern(it) + " (morgens-mittags-abends-zur Nacht)";
+  }
+  function parsePattern(t) {
+    var p = String(t || "").trim().split("-");
+    if (p.length !== 4) return null;
+    var it = {};
+    for (var i = 0; i < 4; i++) { var v = parseQty(p[i]); if (isNaN(v)) return null; it[SLOTS[i]] = v; }
+    return perDay(it) > 0 ? it : null;
+  }
+  function numOrNull(v, lo, hi) {
+    if (v === null || v === undefined || v === "") return null;
+    v = Number(v);
+    return isFinite(v) && v >= lo && v <= hi ? v : null;
+  }
+
+  /* ----- PZN ----- */
+  /* Prüfziffer: 8-stellig Gewichte 1 bis 7, alte 7-stellige Gewichte 2 bis 7, jeweils modulo 11 */
+  function pznCheck(d) {
+    if (!/^\d+$/.test(d)) return false;
+    var s = 0, i, c;
+    if (d.length === 8) { for (i = 0; i < 7; i++) s += (i + 1) * Number(d[i]); c = s % 11; return c !== 10 && c === Number(d[7]); }
+    if (d.length === 7) { for (i = 0; i < 6; i++) s += (i + 2) * Number(d[i]); c = s % 11; return c !== 10 && c === Number(d[6]); }
+    return false;
+  }
+  /* Liefert die PZN (8 Ziffern) aus Eingabe oder Barcode-Inhalt, sonst null.
+     Erkannt werden der PZN-Strichcode (Code 39, z. B. "-00766736") sowie der Data-Matrix-Code
+     (GS1 mit 4150 + PZN oder PPN mit 9N + PZN). Jede Fundstelle wird über die Prüfziffer abgesichert. */
+  function parsePzn(raw) {
+    var s = String(raw == null ? "" : raw).trim(), cands = [], m;
+    var plain = s.replace(/^[*+\-\s]+|[*\s]+$/g, "");
+    if (/^\d{7,8}$/.test(plain)) cands.push(plain);
+    m = /01(\d{14})/.exec(s);
+    if (m && m[1].indexOf("04150") === 0) cands.push(m[1].substr(5, 8));
+    m = /9N(\d{8,12})/.exec(s);
+    if (m) { cands.push(m[1].substr(0, 8)); cands.push(m[1].substr(2, 8)); }
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (c.length === 7) c = "0" + c;
+      if (c.length === 8 && pznCheck(c)) return c;
+    }
+    return null;
+  }
+
+  /* ----- Speicherformat ----- */
   function validMed(m) {
     return m && m.id && typeof m.name === "string" && typeof m.dose === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.from) &&
       (m.to === null || m.to === undefined || /^\d{4}-\d{2}-\d{2}$/.test(m.to));
   }
+  function normMed(m) {
+    var o = { id: m.id, name: m.name, dose: m.dose, from: m.from, to: m.to || null };
+    if (typeof m.strength === "string" && m.strength) o.strength = m.strength;
+    var pz = m.pzn ? parsePzn(m.pzn) : null; if (pz) o.pzn = pz;
+    var ps = numOrNull(m.packSize, 1, 9999); if (ps) o.packSize = ps;
+    if (m.intake && typeof m.intake === "object") {
+      var it = {}, ok = true;
+      SLOTS.forEach(function (k) { var v = numOrNull(m.intake[k], 0, 20); if (v === null) ok = false; it[k] = v; });
+      if (ok && perDay(it) > 0) o.intake = it;
+    }
+    var st = numOrNull(m.stock, 0, 99999);
+    if (st !== null && /^\d{4}-\d{2}-\d{2}$/.test(m.stockAt || "")) { o.stock = st; o.stockAt = m.stockAt; }
+    return o;
+  }
+
+  /* ----- Vorrat ----- */
+  function daysBetween(a, b) { return Math.round((parseDay(b) - parseDay(a)) / 864e5); }
+  function stockInfo(m) {
+    if (m.to || !m.intake || m.stock === undefined || !m.stockAt) return null;
+    var pd = perDay(m.intake); if (pd <= 0) return null;
+    var today = dateValue(new Date());
+    var rem = Math.max(0, m.stock - Math.max(0, daysBetween(m.stockAt, today)) * pd);
+    var left = Math.floor(rem / pd + 1e-9);
+    return { rem: rem, daysLeft: left, last: left > 0 ? shiftDay(today, left - 1) : null, warn: left <= WARN_DAYS, empty: left <= 0 };
+  }
+  function daysWord(n) { return n + (n === 1 ? " Tag" : " Tage"); }
+
   function medInfo(m) {
     var during = readings.filter(function (r) { return inPeriod(r.ts, m.from, m.to); });
     var before = readings.filter(function (r) { return inPeriod(r.ts, shiftDay(m.from, -14), shiftDay(m.from, -1)); });
@@ -704,17 +877,44 @@ section[id] { scroll-margin-top: 12px; }
     }
     return info;
   }
+
   function medRow(m) {
-    var i = medInfo(m), id = safeId(m.id);
-    return '<li class="med"><div class="medtop"><b>' + esc(m.name) + "</b><span>" + esc(m.dose) + "</span></div>" +
-      '<div class="medmeta">' + esc(i.period) + "</div>" +
-      '<div class="medmeta">' + esc(i.stat) + "</div>" + (i.cmp ? '<div class="medmeta">' + esc(i.cmp) + "</div>" : "") +
-      '<div class="medbtns">' +
-      (m.to ? "" : '<button type="button" class="ghost" data-act="change" data-id="' + id + '">Menge ändern</button>' +
+    var i = medInfo(m), id = safeId(m.id), st = stockInfo(m);
+    var h = '<li class="med"><div class="medtop"><b>' + esc(m.name) + "</b>" +
+      (m.intake ? (m.strength ? "<span>" + esc(m.strength) + "</span>" : "") : "<span>" + esc(m.dose) + "</span>") + "</div>";
+    if (m.intake) {
+      h += '<div class="medmeta"><span class="pat">' + esc(intakePattern(m.intake)) + "</span> morgens-mittags-abends-zur Nacht &middot; " +
+        fmtQty(perDay(m.intake)) + " pro Tag</div>";
+    }
+    h += '<div class="medmeta">' + esc(i.period) + (m.pzn ? " &middot; PZN " + m.pzn : "") + "</div>";
+    if (st) {
+      h += '<div class="stock' + (st.empty ? " bad" : st.warn ? " warn" : "") + '">' +
+        (st.empty ? "Vorrat aufgebraucht. Neues Rezept und neue Packung nötig."
+          : "Vorrat " + fmtQty(round1(st.rem)) + " Stück, reicht noch " + daysWord(st.daysLeft) + " (bis " + fmtIso(st.last) + ")." +
+            (st.warn ? " Jetzt neues Rezept besorgen." : "")) + "</div>";
+    } else if (!m.to && m.intake) {
+      h += '<div class="medmeta">Kein Vorrat eingetragen. Mit "Vorrat zählen" gibt es eine Erinnerung ans Rezept.</div>';
+    } else if (!m.to && !m.intake) {
+      h += '<div class="medmeta">Einnahme und Vorrat fehlen. Mit "Menge ändern" ergänzen.</div>';
+    }
+    h += '<div class="medmeta">' + esc(i.stat) + "</div>" + (i.cmp ? '<div class="medmeta">' + esc(i.cmp) + "</div>" : "");
+    if (stockEditId === m.id) {
+      h += '<div class="stockedit"><input id="stock-in" type="text" inputmode="decimal" maxlength="7" aria-label="Vorrat in Stück" placeholder="Stück"' +
+        (st ? ' value="' + fmtQty(round1(st.rem)) + '"' : "") + '>' +
+        '<button type="button" class="ghost" data-act="stocksave" data-id="' + id + '">Speichern</button>' +
+        '<button type="button" class="ghost" data-act="stockcancel" data-id="' + id + '">Abbrechen</button></div>';
+    }
+    h += '<div class="medbtns">' +
+      (m.to ? "" :
+        (m.intake && m.packSize ? '<button type="button" class="ghost" data-act="pack" data-id="' + id + '">Packung dazu</button>' : "") +
+        (m.intake ? '<button type="button" class="ghost" data-act="stock" data-id="' + id + '">Vorrat zählen</button>' : "") +
+        '<button type="button" class="ghost" data-act="change" data-id="' + id + '">Menge ändern</button>' +
         '<button type="button" class="ghost" data-act="stop" data-id="' + id + '">Absetzen</button>') +
       '<button type="button" class="del" data-act="del" data-id="' + id + '">Löschen</button></div></li>';
+    return h;
   }
   function renderMeds() {
+    renderAlerts();
     if (!loaded) { medListEl.innerHTML = ""; return; }
     if (!meds.length) { medListEl.innerHTML = '<p class="empty">Noch keine Medikamente eingetragen.</p>'; return; }
     var active = meds.filter(function (m) { return !m.to; }).sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
@@ -724,14 +924,169 @@ section[id] { scroll-margin-top: 12px; }
     if (past.length) out += '<h3 class="medh">Früher</h3><ul class="medul">' + past.map(medRow).join("") + "</ul>";
     medListEl.innerHTML = out;
   }
+
+  /* ----- Rezept-Warnung ----- */
+  function renderAlerts() {
+    var items = [];
+    if (loaded) {
+      meds.forEach(function (m) { var st = stockInfo(m); if (st && st.warn) items.push({ m: m, st: st }); });
+      items.sort(function (a, b) { return a.st.daysLeft - b.st.daysLeft; });
+    }
+    tabDot.hidden = !items.length;
+    alertEl.hidden = !items.length;
+    if (!items.length) { alertEl.innerHTML = ""; return; }
+    alertEl.innerHTML = "<b>Neues Rezept besorgen</b>" + items.map(function (x) {
+      return "<div>" + esc(x.m.name) + ": " + (x.st.empty ? "Der Vorrat ist aufgebraucht." : "reicht noch " + daysWord(x.st.daysLeft) + ", bis " + fmtIso(x.st.last) + ".") + "</div>";
+    }).join("") + (curTab === "meds" ? "" : '<button type="button" class="ghost" data-goto="meds">Zu den Medikamenten</button>');
+  }
+  alertEl.addEventListener("click", function (e) {
+    if (e.target.closest && e.target.closest("[data-goto]")) showTab("meds");
+  });
+
+  /* ----- Bereiche (Tabs) ----- */
+  var viewEls = { messen: $("#v-messen"), meds: $("#v-meds"), bericht: $("#v-bericht") };
+  var tabEls = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  function showTab(name) {
+    curTab = name;
+    Object.keys(viewEls).forEach(function (k) { viewEls[k].hidden = k !== name; });
+    tabEls.forEach(function (t) { t.setAttribute("aria-selected", t.getAttribute("data-tab") === name ? "true" : "false"); });
+    renderAlerts();
+    window.scrollTo(0, 0);
+  }
+  tabEls.forEach(function (t) { t.addEventListener("click", function () { showTab(t.getAttribute("data-tab")); }); });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden && loaded) render(); });
+
+  /* ----- Formular ----- */
   function medSay(text, kind) { medMsgEl.className = "msg" + (kind ? " " + kind : ""); medMsgEl.textContent = text; }
+  function listSay(text, kind) { listMsgEl.className = "msg" + (kind ? " " + kind : ""); listMsgEl.textContent = text; }
+  function pznSay(text, kind) { pznMsgEl.className = "msg" + (kind ? " " + kind : ""); pznMsgEl.textContent = text; }
   medFromEl.value = dateValue(new Date());
+
+  function resetMedForm() {
+    medNameEl.value = ""; medStrEl.value = ""; pznEl.value = ""; packEl.value = ""; stockEl.value = "";
+    intakeEls.forEach(function (el) { el.value = ""; });
+    medToEl.value = ""; medFromEl.value = dateValue(new Date());
+    stockTouched = false; matchEl.hidden = true; matchId = null; pznSay(""); updateSum();
+  }
+  function readIntake() {
+    var it = {}, bad = false;
+    intakeEls.forEach(function (el, i) { var v = parseQty(el.value); if (isNaN(v)) bad = true; it[SLOTS[i]] = isNaN(v) ? 0 : v; });
+    return bad ? null : it;
+  }
+  function updateSum() {
+    var it = readIntake();
+    if (!it) { sumEl.textContent = "Bitte Zahlen eintragen, zum Beispiel 1 oder 0,5."; return; }
+    var pd = perDay(it), pk = parseInt(packEl.value, 10);
+    if (pd <= 0) { sumEl.textContent = "Zum Beispiel 1 morgens und 1 abends ergibt 1-0-1-0. Für eine halbe Tablette 0,5 eintragen."; return; }
+    sumEl.textContent = intakePattern(it) + ": " + fmtQty(pd) + " pro Tag" +
+      (pk > 0 ? ". Eine Packung mit " + pk + " Stück reicht etwa " + daysWord(Math.floor(pk / pd)) + "." : ".");
+  }
+  intakeEls.concat([packEl]).forEach(function (el) { el.addEventListener("input", updateSum); });
+  packEl.addEventListener("input", function () { if (!stockTouched) stockEl.value = packEl.value; });
+  stockEl.addEventListener("input", function () { stockTouched = true; });
+
+  function findByPzn(pzn) {
+    var hits = meds.filter(function (m) { return m.pzn === pzn; });
+    hits.sort(function (a, b) { return (a.to ? 1 : 0) - (b.to ? 1 : 0) || (a.from < b.from ? 1 : a.from > b.from ? -1 : 0); });
+    return hits[0] || null;
+  }
+  function applyPzn(pzn) {
+    var known = findByPzn(pzn);
+    matchEl.hidden = true; matchId = null;
+    if (!known) {
+      pznSay("PZN " + pzn + " ist neu. Trage Name und Packungsgröße einmal ein. Beim nächsten Scan füllt die App beides selbst aus.", "ok");
+      medNameEl.focus();
+      return;
+    }
+    medNameEl.value = known.name;
+    medStrEl.value = known.strength || "";
+    if (known.packSize) { packEl.value = known.packSize; if (!stockTouched) stockEl.value = known.packSize; }
+    if (known.intake && !intakeEls.some(function (el) { return el.value; })) {
+      SLOTS.forEach(function (k, i) { intakeEls[i].value = known.intake[k] ? fmtQty(known.intake[k]) : ""; });
+    }
+    updateSum();
+    pznSay("Erkannt: " + known.name + (known.packSize ? ", Packung mit " + known.packSize + " Stück" : "") + ".", "ok");
+    var act = meds.filter(function (m) { return m.pzn === pzn && !m.to && m.intake && m.packSize; })[0];
+    if (act) {
+      matchId = act.id;
+      matchTxt.textContent = act.name + " ist schon eingetragen. Neue Packung gekauft?";
+      matchBtn.textContent = "+" + act.packSize + " Stück zum Vorrat";
+      matchEl.hidden = false;
+    }
+  }
+  pznEl.addEventListener("input", function () {
+    var d = pznEl.value.replace(/\D/g, "");
+    if (pznEl.value !== d) pznEl.value = d;
+    matchEl.hidden = true; matchId = null;
+    if (d.length < 8) { pznSay(""); return; }
+    var p = parsePzn(d);
+    if (p) applyPzn(p); else pznSay("Diese PZN ist ungültig, die Prüfziffer stimmt nicht. Bitte die Ziffern prüfen.", "err");
+  });
+  pznEl.addEventListener("change", function () {
+    var d = pznEl.value.replace(/\D/g, "");
+    if (d.length === 7) { var p = parsePzn(d); if (p) { pznEl.value = p; applyPzn(p); } else pznSay("Diese PZN ist ungültig, die Prüfziffer stimmt nicht.", "err"); }
+    else if (d.length > 0 && d.length < 7) pznSay("Eine PZN hat 8 Ziffern.", "err");
+  });
+
+  /* ----- Scanner (nur in der Android-App) ----- */
+  function scanForPzn() {
+    if (!Scanner) return Promise.reject(new Error("unavailable"));
+    return Promise.resolve().then(function () { return Scanner.isGoogleBarcodeScannerModuleAvailable(); })
+      .catch(function () { return { available: true }; })
+      .then(function (r) {
+        if (r && r.available === false) {
+          return Promise.resolve().then(function () { return Scanner.installGoogleBarcodeScannerModule(); })
+            .catch(function () {}).then(function () { throw new Error("module"); });
+        }
+        return Scanner.scan({ formats: ["CODE_39", "DATA_MATRIX", "CODE_128", "EAN_13"] });
+      })
+      .then(function (res) {
+        var list = (res && res.barcodes) || [];
+        for (var i = 0; i < list.length; i++) {
+          var p = parsePzn(list[i].rawValue || list[i].displayValue);
+          if (p) return p;
+        }
+        throw new Error("nopzn");
+      });
+  }
+  scanBtn.addEventListener("click", function () {
+    scanBtn.disabled = true; pznSay("");
+    scanForPzn().then(function (pzn) { pznEl.value = pzn; applyPzn(pzn); })
+      .catch(function (err) {
+        var t = String((err && err.message) || err);
+        if (isCancel(err)) pznSay("");
+        else if (t === "unavailable") pznSay("Der Scanner gibt es nur in der Android-App. Tippe die PZN ein, 8 Ziffern neben dem Strichcode.", "err");
+        else if (t === "module") pznSay("Google lädt gerade das Scanner-Modul (einmalig, Internet nötig). Bitte in einer Minute noch einmal tippen.", "err");
+        else if (t === "nopzn") pznSay("Kein PZN-Code erkannt. Halte die Kamera auf den Strichcode mit \"PZN\" oder tippe die Nummer ein.", "err");
+        else pznSay("Der Scanner konnte nicht gestartet werden. Tippe die PZN bitte ein.", "err");
+      }).then(function () { scanBtn.disabled = false; });
+  });
+
+  /* ----- Speichern ----- */
+  function updateMed(id, fn, okMsg) {
+    var next = meds.map(function (x) { var c = Object.assign({}, x); if (c.id === id) fn(c); return c; });
+    return persistKey(MEDKEY, next).then(function () {
+      meds = next; render(); listSay(okMsg, "ok");
+    }).catch(function () { listSay("Das hat nicht geklappt.", "err"); });
+  }
+  function addPack(m) {
+    var st = stockInfo(m), today = dateValue(new Date());
+    var total = (st ? st.rem : 0) + m.packSize;
+    return updateMed(m.id, function (c) { c.stock = total; c.stockAt = today; },
+      "Packung zu " + m.name + " hinzugefügt. Vorrat jetzt " + fmtQty(round1(total)) + " Stück.");
+  }
+  matchBtn.addEventListener("click", function () {
+    var m = meds.filter(function (x) { return x.id === matchId; })[0];
+    if (!m || !loaded) return;
+    addPack(m).then(function () { resetMedForm(); medAddEl.open = false; });
+  });
 
   function saveMeds(next, okMsg) {
     medSaveBtn.disabled = true;
     persistKey(MEDKEY, next).then(function () {
-      meds = next; render(); medSay(okMsg, "ok");
-      medNameEl.value = ""; medDoseEl.value = ""; medToEl.value = ""; medFromEl.value = dateValue(new Date());
+      meds = next; render(); resetMedForm(); medSay("");
+      medAddEl.open = false; listSay(okMsg, "ok");
+      listMsgEl.scrollIntoView({ block: "center" });
     }).catch(function () {
       medSay("Speichern hat nicht geklappt. Bitte noch einmal versuchen.", "err");
     }).then(function () { medSaveBtn.disabled = false; });
@@ -740,14 +1095,34 @@ section[id] { scroll-margin-top: 12px; }
   $("#medform").addEventListener("submit", function (e) {
     e.preventDefault();
     if (!loaded) return;
-    var name = cleanText(medNameEl.value), dose = cleanText(medDoseEl.value), from = medFromEl.value, to = medToEl.value || null;
+    var name = cleanText(medNameEl.value), strength = cleanText(medStrEl.value), from = medFromEl.value, to = medToEl.value || null;
     var today = dateValue(new Date());
+    var intake = readIntake();
+    var pzRaw = pznEl.value.replace(/\D/g, ""), pzn = null;
     if (!name) { medSay("Bitte den Namen des Medikaments eintragen.", "err"); medNameEl.focus(); return; }
-    if (!dose) { medSay("Bitte die Menge eintragen, zum Beispiel 5 mg morgens.", "err"); medDoseEl.focus(); return; }
+    if (pzRaw) {
+      pzn = parsePzn(pzRaw);
+      if (!pzn) { medSay("Die PZN ist ungültig. Bitte prüfen oder das Feld leeren.", "err"); pznEl.focus(); return; }
+    }
+    if (!intake) { medSay("Bei der Einnahme bitte nur Zahlen eintragen, zum Beispiel 1 oder 0,5.", "err"); intakeEls[0].focus(); return; }
+    if (perDay(intake) <= 0) { medSay("Bitte die Einnahme eintragen, zum Beispiel morgens 1 und abends 1 für 1-0-1-0.", "err"); intakeEls[0].focus(); return; }
+    var packSize = null;
+    if (packEl.value.trim() !== "") {
+      packSize = parseInt(packEl.value, 10);
+      if (!/^\d{1,4}$/.test(packEl.value.trim()) || !(packSize >= 1)) { medSay("Die Packungsgröße muss eine ganze Zahl sein, zum Beispiel 100.", "err"); packEl.focus(); return; }
+    }
+    var stock = null;
+    if (stockEl.value.trim() !== "") {
+      stock = parseQty(stockEl.value, 99999);
+      if (isNaN(stock)) { medSay("Beim Vorrat bitte eine Zahl eintragen, zum Beispiel 30.", "err"); stockEl.focus(); return; }
+    } else if (packSize) {
+      stock = packSize;
+    }
     if (!parseDay(from)) { medSay("Bitte bei \"Seit\" ein Datum angeben.", "err"); medFromEl.focus(); return; }
     if (from > today) { medSay("Das Datum bei \"Seit\" liegt in der Zukunft.", "err"); medFromEl.focus(); return; }
     if (to && (!parseDay(to) || to < from)) { medSay("\"Bis\" darf nicht vor \"Seit\" liegen.", "err"); medToEl.focus(); return; }
     if (to && to > today) { medSay("Das Datum bei \"Bis\" liegt in der Zukunft.", "err"); medToEl.focus(); return; }
+    var dose = doseText(strength, intake);
     var next = meds.map(function (m) { return Object.assign({}, m); });
     if (next.some(function (m) { return sameName(m.name, name) && m.dose === dose && m.from === from; })) {
       medSay("Diesen Eintrag gibt es schon.", "err"); return;
@@ -756,18 +1131,27 @@ section[id] { scroll-margin-top: 12px; }
     if (!to) {
       var prev = next.filter(function (m) { return !m.to && sameName(m.name, name); })[0];
       if (prev) {
+        if (prev.dose === dose) { medSay("Diese Einnahme ist für " + name + " schon eingetragen.", "err"); return; }
         if (from <= prev.from) {
           medSay("Das Datum muss nach dem Beginn der bisherigen Menge (" + fmtIso(prev.from) + ") liegen. Für frühere Zeiträume \"Bis\" ausfüllen.", "err");
           medFromEl.focus(); return;
         }
         prev.to = shiftDay(from, -1);
-        notice = " Die bisherige Menge (" + prev.dose + ") endet am " + fmtIso(prev.to) + ".";
+        notice = " Die bisherige Einnahme (" + prev.dose + ") endet am " + fmtIso(prev.to) + ".";
       }
     }
-    next.push({ id: newId(), name: name, dose: dose, from: from, to: to });
-    saveMeds(next, "Gespeichert: " + name + ", " + dose + (to ? ", " + fmtIso(from) + " bis " + fmtIso(to) : " seit " + fmtIso(from)) + "." + notice);
+    var rec = { id: newId(), name: name, dose: dose, from: from, to: to, intake: intake };
+    if (strength) rec.strength = strength;
+    if (pzn) rec.pzn = pzn;
+    if (packSize) rec.packSize = packSize;
+    if (!to && stock !== null) { rec.stock = stock; rec.stockAt = today; }
+    next.push(rec);
+    var si = stockInfo(rec);
+    var stockNote = si ? (si.empty ? " Der Vorrat ist aufgebraucht." : " Der Vorrat reicht bis " + fmtIso(si.last) + ".") : "";
+    saveMeds(next, "Gespeichert: " + name + ", " + dose + (to ? ", " + fmtIso(from) + " bis " + fmtIso(to) : " seit " + fmtIso(from)) + "." + stockNote + notice);
   });
 
+  /* ----- Aktionen in der Liste ----- */
   medListEl.addEventListener("click", function (e) {
     var b = e.target.closest ? e.target.closest("button[data-act]") : null;
     if (!b || !loaded) return;
@@ -775,17 +1159,36 @@ section[id] { scroll-margin-top: 12px; }
     var m = meds.filter(function (x) { return safeId(x.id) === id; })[0];
     if (!m) return;
     if (act === "change") {
-      medNameEl.value = m.name; medDoseEl.value = ""; medFromEl.value = dateValue(new Date()); medToEl.value = "";
-      medSay("Trage die neue Menge für " + m.name + " ein. Die bisherige Menge endet am Vortag.", "ok");
-      medDoseEl.focus();
+      resetMedForm();
+      medNameEl.value = m.name; medStrEl.value = m.strength || ""; pznEl.value = m.pzn || "";
+      if (m.packSize) packEl.value = m.packSize;
+      if (m.intake) SLOTS.forEach(function (k, i) { intakeEls[i].value = m.intake[k] ? fmtQty(m.intake[k]) : ""; });
+      var si = stockInfo(m);
+      if (si) { stockEl.value = fmtQty(round1(si.rem)); stockTouched = true; }
+      updateSum();
+      medAddEl.open = true;
+      medSay("Ändere die Einnahme für " + m.name + ". Die bisherige Einnahme endet am Vortag, der Vorrat wird übernommen.", "ok");
+      medAddEl.scrollIntoView({ block: "start" });
+      intakeEls[0].focus();
+      return;
+    }
+    if (act === "stock") { stockEditId = m.id; renderMeds(); var inp = $("#stock-in"); if (inp) { inp.focus(); inp.select(); } return; }
+    if (act === "stockcancel") { stockEditId = null; renderMeds(); return; }
+    if (act === "stocksave") {
+      var inEl = $("#stock-in"), v = inEl ? parseQty(inEl.value, 99999) : NaN;
+      if (!inEl || inEl.value.trim() === "" || isNaN(v)) { listSay("Bitte eine Zahl eintragen, zum Beispiel 30.", "err"); return; }
+      stockEditId = null;
+      updateMed(m.id, function (c) { c.stock = v; c.stockAt = dateValue(new Date()); }, "Vorrat für " + m.name + ": " + fmtQty(v) + " Stück.");
       return;
     }
     if (!b.classList.contains("armed")) {
       var orig = b.textContent;
-      b.classList.add("armed"); b.textContent = act === "stop" ? "Wirklich absetzen?" : "Wirklich löschen?";
+      b.classList.add("armed");
+      b.textContent = act === "stop" ? "Wirklich absetzen?" : act === "pack" ? "+" + m.packSize + " Stück, ok?" : "Wirklich löschen?";
       setTimeout(function () { if (b.isConnected) { b.classList.remove("armed"); b.textContent = orig; } }, 4000);
       return;
     }
+    if (act === "pack") { b.disabled = true; addPack(m); return; }
     var next;
     if (act === "stop") {
       next = meds.map(function (x) { var c = Object.assign({}, x); if (c.id === m.id) c.to = dateValue(new Date()); return c; });
@@ -795,8 +1198,8 @@ section[id] { scroll-margin-top: 12px; }
     b.disabled = true;
     persistKey(MEDKEY, next).then(function () {
       meds = next; render();
-      medSay(act === "stop" ? m.name + " ist abgesetzt. Letzter Tag der Einnahme ist heute." : "Eintrag gelöscht.", "ok");
-    }).catch(function () { medSay("Das hat nicht geklappt.", "err"); b.disabled = false; });
+      listSay(act === "stop" ? m.name + " ist abgesetzt. Letzter Tag der Einnahme ist heute." : "Eintrag gelöscht.", "ok");
+    }).catch(function () { listSay("Das hat nicht geklappt.", "err"); b.disabled = false; });
   });
 
   /* ---------- PDF-Bericht ---------- */
@@ -1024,7 +1427,8 @@ section[id] { scroll-margin-top: 12px; }
         rest.forEach(function (t) { doc.text(t, L, y); y += 4.6; });
         y += 2.5;
       });
-      var medNote = doc.splitTextToSize("Die Durchschnittswerte beziehen sich auf den gesamten Einnahmezeitraum und zeigen nur zeitliche Zusammenhänge, keine Ursachen.", R - L);
+      var medNote = doc.splitTextToSize((medsIn.some(function (m) { return m.intake; }) ? "Einnahme: Anzahl pro Gabe, in der Reihenfolge morgens-mittags-abends-zur Nacht. " : "") +
+        "Die Durchschnittswerte beziehen sich auf den gesamten Einnahmezeitraum und zeigen nur zeitliche Zusammenhänge, keine Ursachen.", R - L);
       doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(110);
       doc.text(medNote, L, y); y += medNote.length * 4 + 6;
     }
@@ -1110,9 +1514,11 @@ section[id] { scroll-margin-top: 12px; }
     });
     if (meds.length) {
       rows.push("");
-      rows.push("Medikament;Menge;Seit;Bis");
+      rows.push("Medikament;Menge;Seit;Bis;PZN;Packungsgröße;Einnahme;Vorrat;Vorrat Stand;Stärke");
       meds.slice().sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; }).forEach(function (m) {
-        rows.push([cleanText(m.name), cleanText(m.dose), fmtIso(m.from), m.to ? fmtIso(m.to) : ""].join(";"));
+        rows.push([cleanText(m.name), cleanText(m.dose), fmtIso(m.from), m.to ? fmtIso(m.to) : "",
+          m.pzn || "", m.packSize || "", m.intake ? intakePattern(m.intake) : "",
+          m.stock !== undefined ? fmtQty(m.stock) : "", m.stockAt ? fmtIso(m.stockAt) : "", cleanText(m.strength)].join(";"));
       });
     }
     deliver("blutdruck-sicherung_" + dateValue(new Date()) + ".csv", "text/csv", "﻿" + rows.join("\r\n"), null, "Blutdruck-Sicherung")
@@ -1137,7 +1543,14 @@ section[id] { scroll-margin-top: 12px; }
         var name = cleanText(f[0]), dose = cleanText(f[1]), from = parseGermanDay(f[2]);
         var hasTo = (f[3] || "").trim() !== "", to = hasTo ? parseGermanDay(f[3]) : null;
         if (!name || !dose || !from || (hasTo && !to) || (to && to < from)) { bad++; return; }
-        medsOut.push({ id: newId(), name: name, dose: dose, from: from, to: to });
+        var im = { id: newId(), name: name, dose: dose, from: from, to: to };
+        var pz = parsePzn(f[4]); if (pz) im.pzn = pz;
+        var ps = parseInt(f[5], 10); if (ps > 0) im.packSize = ps;
+        var pt = parsePattern(f[6]); if (pt) im.intake = pt;
+        var sk = (f[7] || "").trim() === "" ? NaN : parseQty(f[7], 99999), sd = parseGermanDay(f[8]);
+        if (!isNaN(sk) && sd && !to) { im.stock = sk; im.stockAt = sd; }
+        var sr = cleanText(f[9]); if (sr) im.strength = sr;
+        medsOut.push(normMed(im));
         return;
       }
       var c = line.split(/[;,\t]/);
@@ -1195,9 +1608,7 @@ section[id] { scroll-margin-top: 12px; }
     readings = (Array.isArray(res[0]) ? res[0] : []).filter(function (r) {
       return r && isFinite(r.ts) && isFinite(r.sys) && isFinite(r.dia) && r.id;
     });
-    meds = (Array.isArray(res[1]) ? res[1] : []).filter(validMed).map(function (m) {
-      return { id: m.id, name: m.name, dose: m.dose, from: m.from, to: m.to || null };
-    });
+    meds = (Array.isArray(res[1]) ? res[1] : []).filter(validMed).map(normMed);
     loaded = true; saveBtn.disabled = false; medSaveBtn.disabled = false; render();
   });
 })();
