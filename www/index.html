@@ -401,8 +401,9 @@ details.card .medform { margin-top: 14px; }
         </div>
         <div class="pair">
           <div class="field"><label for="med-pack">Packungsgröße <span class="opt-hint">(Stück)</span></label><input id="med-pack" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="z. B. 100"></div>
-          <div class="field"><label for="med-stock">Vorrat jetzt <span class="opt-hint">(Stück)</span></label><input id="med-stock" type="text" inputmode="decimal" maxlength="7" placeholder="wie Packung"></div>
+          <div class="field"><label for="med-stock">Vorrat jetzt <span class="opt-hint">(Stück)</span></label><input id="med-stock" type="text" inputmode="decimal" maxlength="7" placeholder="volle Packung"></div>
         </div>
+        <p class="note">Hast du die Packung schon früher angebrochen, trage bei "Seit" den Tag ein, an dem du angefangen hast. Ohne eigene Vorratsangabe rechnet die App mit einer vollen Packung ab diesem Tag. Weißt du, wie viel noch übrig ist, trage es bei "Vorrat jetzt" ein.</p>
         <div class="pair">
           <div class="field"><label for="med-from">Seit</label><input id="med-from" type="date"></div>
           <div class="field"><label for="med-to">Bis (optional)</label><input id="med-to" type="date"></div>
@@ -1118,6 +1119,9 @@ details.card .medform { margin-top: 14px; }
     } else if (packSize) {
       stock = packSize;
     }
+    /* Ohne eigene Vorratsangabe gilt die Packung ab "Seit" als voll. So lassen sich angebrochene Packungen mit einem früheren Datum erfassen. */
+    var stockAt = today;
+    if (packSize && stock === packSize && (stockEl.value.trim() === "" || !stockTouched)) stockAt = from;
     if (!parseDay(from)) { medSay("Bitte bei \"Seit\" ein Datum angeben.", "err"); medFromEl.focus(); return; }
     if (from > today) { medSay("Das Datum bei \"Seit\" liegt in der Zukunft.", "err"); medFromEl.focus(); return; }
     if (to && (!parseDay(to) || to < from)) { medSay("\"Bis\" darf nicht vor \"Seit\" liegen.", "err"); medToEl.focus(); return; }
@@ -1144,7 +1148,7 @@ details.card .medform { margin-top: 14px; }
     if (strength) rec.strength = strength;
     if (pzn) rec.pzn = pzn;
     if (packSize) rec.packSize = packSize;
-    if (!to && stock !== null) { rec.stock = stock; rec.stockAt = today; }
+    if (!to && stock !== null) { rec.stock = stock; rec.stockAt = stockAt; }
     next.push(rec);
     var si = stockInfo(rec);
     var stockNote = si ? (si.empty ? " Der Vorrat ist aufgebraucht." : " Der Vorrat reicht bis " + fmtIso(si.last) + ".") : "";
