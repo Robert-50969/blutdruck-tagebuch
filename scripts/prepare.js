@@ -79,6 +79,13 @@ async function prepareAndroid() {
   const manifestPath = path.join(root, "android/app/src/main/AndroidManifest.xml");
   let manifest = fs.readFileSync(manifestPath, "utf8");
   manifest = manifest.replace('android:allowBackup="true"', 'android:allowBackup="false"');
+  // Barcode-Scanner (Google ML Kit): Das Scanner-Modul wird von Google Play-Diensten bereitgestellt, die App selbst braucht keine Kamera-Berechtigung
+  if (!manifest.includes("com.google.mlkit.vision.DEPENDENCIES")) {
+    manifest = manifest.replace(
+      "</application>",
+      '    <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui"/>\n    </application>'
+    );
+  }
   fs.writeFileSync(manifestPath, manifest);
 
   // Versionsnummer hochzählen, damit Updates über die bestehende App installiert werden können
