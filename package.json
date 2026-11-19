@@ -4,7 +4,7 @@
   "private": true,
   "description": "Blutdruck-Tagebuch als Android-App, alle Daten bleiben auf dem Handy",
   "dependencies": {
-    "@capacitor-mlkit/barcode-scanning": "^6.0.0",
+    "@capacitor-mlkit/barcode-scanning": "6.2.0",
     "@capacitor/android": "6.2.3",
     "@capacitor/cli": "6.2.3",
     "@capacitor/core": "6.2.3",
